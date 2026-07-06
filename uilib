@@ -27,9 +27,9 @@ do --// UI Source
 
     Library = {
         Flags = { },
-        MenuKeybind = tostring(Enum.KeyCode.X),
+        MenuKeybind = tostring(Enum.KeyCode.Insert),
 
-        Directory = "Radiance",
+        Directory = "Onix.lol Private PD",
         Folders = {
             Assets = "/Assets",
             Configs = "/Configs"
