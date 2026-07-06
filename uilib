@@ -1,4 +1,3 @@
-
 do --// UI Source
     if getgenv().Library and getgenv().Library.Exit then
         getgenv().Library:Exit()
@@ -5360,12 +5359,11 @@ do --// UI Source
                         OtherSection:Button({
                             Name = "unload",
                             Callback = function()
-                               
-                            Library:Exit()
+                                Library:Exit()
                             end
                         })
 
-                        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.Insert, Callback = function(Value)
+                        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.RightShift, Callback = function(Value)
                             Library.MenuKeybind = Flags["uibind"].Key
                         end})
 
