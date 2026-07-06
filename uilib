@@ -5360,7 +5360,7 @@ do --// UI Source
                     do
                         OtherSection:Button({
                             Name = "unload1",
-                            Sense.Exit()
+                            Sense.Unload()
             
                             -- Unload the menu
                             Library:Exit()
