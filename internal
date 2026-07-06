@@ -1,0 +1,447 @@
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/uilib"))()
+-- esp is whats in  d
+local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib"))()
+
+local Window = Library:Window({
+    Name = 'Onix<font color="rgb(126, 192, 255)">.lol</font> | developer | lifetime',
+    Rank = "developer"
+})
+
+do
+    local Watermark = Window:Watermark({
+        Name = "Onix.lol Private",
+        SubName = "Project Delta"
+    })
+
+    local KeybindList = Window:KeybindList({
+        Name = 'hot<font color="rgb(126, 192, 255)">keys</font>'
+    })
+
+    local StaffList = Window:StaffList({
+        Name = 'staff<font color="rgb(0, 80, 255)"> list</font>'
+    })
+
+    StaffList:Add("Bigrig", "owner/dev")
+
+    local TargetIndicator = Window:TargetIndicator({
+        Name = "target<font color='rgb(0, 80, 255)'> info</font>"
+    })
+
+    TargetIndicator:SetTarget(game:GetService("Players").LocalPlayer)
+end
+
+local VisualsPage = Window:Page({Name = "visuals"})
+
+do
+    local Main = VisualsPage:Section({Name = "esp", Side = 1})
+
+    Main:Toggle({
+        Name = "master esp",
+        Default = ESP.Enabled,
+        Callback = function(Value)
+            ESP.Enabled = Value
+        end
+    })
+
+    Main:Toggle({
+        Name = "team check",
+        Default = ESP.TeamCheck,
+        Callback = function(Value)
+            ESP.TeamCheck = Value
+        end
+    })
+
+    Main:Toggle({
+        Name = "fade on distance",
+        Default = ESP.FadeOut.OnDistance,
+        Callback = function(Value)
+            ESP.FadeOut.OnDistance = Value
+        end
+    })
+
+    Main:Toggle({
+        Name = "friend tag",
+        Default = ESP.Options.Friendcheck,
+        Callback = function(Value)
+            ESP.Options.Friendcheck = Value
+        end
+    })
+
+    Main:Slider({
+        Name = "max distance",
+        Min = 50,
+        Max = 1000,
+        Default = ESP.MaxDistance,
+        Decimals = 1,
+        Suffix = "m",
+        Callback = function(Value)
+            ESP.MaxDistance = Value
+        end
+    })
+
+    Main:Slider({
+        Name = "font size",
+        Min = 8,
+        Max = 20,
+        Default = ESP.FontSize,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.FontSize = Value
+        end
+    })
+
+    local Boxes = VisualsPage:Section({Name = "boxes", Side = 1})
+
+    Boxes:Toggle({
+        Name = "corner box",
+        Default = ESP.Drawing.Boxes.Corner.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Corner.Enabled = Value
+        end
+    })
+
+    Boxes:Toggle({
+        Name = "filled box",
+        Default = ESP.Drawing.Boxes.Filled.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.Enabled = Value
+        end
+    })
+
+    Boxes:Dropdown({
+        Name = "outline mode",
+        Items = {"solid", "gradient"},
+        Default = ESP.Drawing.Boxes.Gradient and "gradient" or "solid",
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Gradient = Value == "gradient"
+        end
+    })
+
+    Boxes:Dropdown({
+        Name = "fill mode",
+        Items = {"solid", "gradient"},
+        Default = ESP.Drawing.Boxes.GradientFill and "gradient" or "solid",
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFill = Value == "gradient"
+        end
+    })
+
+    Boxes:Slider({
+        Name = "fill transparency",
+        Min = 0,
+        Max = 1,
+        Default = ESP.Drawing.Boxes.Filled.Transparency,
+        Decimals = 0.01,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.Transparency = Value
+        end
+    })
+
+    Boxes:Toggle({
+        Name = "fill animation",
+        Default = ESP.Drawing.Boxes.Animate,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Animate = Value
+        end
+    })
+
+    Boxes:Slider({
+        Name = "rotation speed",
+        Min = 0,
+        Max = 600,
+        Default = ESP.Drawing.Boxes.RotationSpeed,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.RotationSpeed = Value
+        end
+    })
+
+    local Info = VisualsPage:Section({Name = "info", Side = 2})
+
+    Info:Toggle({
+        Name = "names",
+        Default = ESP.Drawing.Names.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Names.Enabled = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "distance",
+        Default = ESP.Drawing.Distances.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Distances.Enabled = Value
+        end
+    })
+
+    Info:Dropdown({
+        Name = "distance position",
+        Items = {"Text", "Bottom"},
+        Default = ESP.Drawing.Distances.Position,
+        Callback = function(Value)
+            ESP.Drawing.Distances.Position = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon text",
+        Default = ESP.Drawing.Weapons.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Enabled = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon icons",
+        Default = ESP.Drawing.Weapons.Icons,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Icons = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon gradient",
+        Default = ESP.Drawing.Weapons.Gradient,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Gradient = Value
+        end
+    })
+
+    local Health = VisualsPage:Section({Name = "health", Side = 2})
+
+    Health:Toggle({
+        Name = "health bar",
+        Default = ESP.Drawing.Healthbar.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Enabled = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health text",
+        Default = ESP.Drawing.Healthbar.HealthText,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.HealthText = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health lerp",
+        Default = ESP.Drawing.Healthbar.Lerp,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Lerp = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health gradient",
+        Default = ESP.Drawing.Healthbar.Gradient,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Gradient = Value
+        end
+    })
+
+    Health:Slider({
+        Name = "health width",
+        Min = 1,
+        Max = 8,
+        Default = ESP.Drawing.Healthbar.Width,
+        Decimals = 0.1,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Width = Value
+        end
+    })
+
+    local Chams = VisualsPage:Section({Name = "chams", Side = 2})
+
+    Chams:Toggle({
+        Name = "chams",
+        Default = ESP.Drawing.Chams.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Enabled = Value
+        end
+    })
+
+    Chams:Toggle({
+        Name = "thermal",
+        Default = ESP.Drawing.Chams.Thermal,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Thermal = Value
+        end
+    })
+
+    Chams:Dropdown({
+        Name = "occlusion chams",
+        Items = {"occluded", "always on top"},
+        Default = ESP.Drawing.Chams.VisibleCheck and "occluded" or "always on top",
+        Callback = function(Value)
+            ESP.Drawing.Chams.VisibleCheck = Value == "occluded"
+        end
+    })
+
+    Chams:Slider({
+        Name = "fill transparency",
+        Min = 0,
+        Max = 100,
+        Default = ESP.Drawing.Chams.Fill_Transparency,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Fill_Transparency = Value
+        end
+    })
+
+    Chams:Slider({
+        Name = "outline transparency",
+        Min = 0,
+        Max = 100,
+        Default = ESP.Drawing.Chams.Outline_Transparency,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Outline_Transparency = Value
+        end
+    })
+
+    local Colors = VisualsPage:Section({Name = "colors", Side = 1})
+
+    Colors:Label({Name = "box outline"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Full.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Full.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "box corners"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Corner.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Corner.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "box fill"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Filled.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "outline gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "outline gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "fill gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientFillRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFillRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "fill gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientFillRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFillRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "name"}):Colorpicker({
+        Default = ESP.Drawing.Names.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Names.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "distance"}):Colorpicker({
+        Default = ESP.Drawing.Distances.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Distances.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "friend tag"}):Colorpicker({
+        Default = ESP.Options.FriendcheckRGB,
+        Callback = function(Value)
+            ESP.Options.FriendcheckRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon text"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.WeaponTextRGB,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.WeaponTextRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon icon"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "health text"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.HealthTextRGB,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.HealthTextRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "health low"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "health mid"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "health high"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB3,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB3 = Value
+        end
+    })
+
+    Colors:Label({Name = "chams fill"}):Colorpicker({
+        Default = ESP.Drawing.Chams.FillRGB,
+        Callback = function(Value)
+            ESP.Drawing.Chams.FillRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "chams outline"}):Colorpicker({
+        Default = ESP.Drawing.Chams.OutlineRGB,
+        Callback = function(Value)
+            ESP.Drawing.Chams.OutlineRGB = Value
+        end
+    })
+end
+
+Window:InitWindow()
