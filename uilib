@@ -5359,12 +5359,8 @@ do --// UI Source
 
                     do
                         OtherSection:Button({
-                            Name = "unload",
-                            Callback = function()
-                            -- Disable ESP before unloading
-                            Sense.teamSettings.enemy.enabled = false
-                            Sense.teamSettings.team.enabled = false
-                            Sense.teamSettings.neutral.enabled = false
+                            Name = "unload1",
+                            Sense.Exit()
             
                             -- Unload the menu
                             Library:Exit()
