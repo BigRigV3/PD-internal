@@ -458,218 +458,39 @@ do
         return _Instance;
     end
     --
-    function Functions:GetInventory(Player)
+    function Functions:GetReplicatedPlayer(Player)
         local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
-        PlayerFolder = PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
-        return PlayerFolder and PlayerFolder:FindFirstChild("Inventory")
+        return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
     end
 
-    function Functions:GetInventoryItemName(Item)
-        if not Item then
-            return nil
-        end
-
-        for _, Attribute in {"Item", "ItemName", "Name", "Weapon", "WeaponName"} do
-            local Value = Item:GetAttribute(Attribute)
-            if type(Value) == "string" and Value ~= "" then
-                return Value
-            end
-        end
-
-        if Item:IsA("StringValue") and Item.Value ~= "" then
-            return Item.Value
-        end
-
-        if Item:IsA("ObjectValue") and Item.Value then
-            return Item.Value.Name
-        end
-
-        return Item.Name
+    function Functions:GetEquippedToolValue(Player)
+        local ReplicatedPlayer = Functions:GetReplicatedPlayer(Player)
+        local Status = ReplicatedPlayer and ReplicatedPlayer:FindFirstChild("Status")
+        local GameplayVariables = Status and Status:FindFirstChild("GameplayVariables")
+        local EquippedTool = GameplayVariables and GameplayVariables:FindFirstChild("EquippedTool")
+        return EquippedTool and EquippedTool.Value
     end
 
-    function Functions:IsInventoryItemEquipped(Item)
-        if not Item then
-            return false
+    function Functions:GetEquippedToolName(Player)
+        local EquippedTool = Functions:GetEquippedToolValue(Player)
+
+        if typeof(EquippedTool) == "Instance" then
+            return EquippedTool.Name
         end
 
-        for _, Attribute in {"Equipped", "IsEquipped", "Selected", "Active"} do
-            if Item:GetAttribute(Attribute) == true then
-                return true
-            end
-        end
-
-        for _, ChildName in {"Equipped", "IsEquipped", "Selected", "Active"} do
-            local Child = Item:FindFirstChild(ChildName)
-            if Child and Child:IsA("BoolValue") and Child.Value then
-                return true
-            end
-        end
-
-        local Parent = Item.Parent
-        return Parent and string.find(string.lower(Parent.Name), "equipped") ~= nil
-    end
-
-    function Functions:IsHotbarContainer(Object)
-        if not Object then
-            return false
-        end
-
-        local Name = string.lower(Object.Name)
-        return string.find(Name, "hotbar") ~= nil or string.find(Name, "quick") ~= nil
-    end
-
-    function Functions:IsHotbarSlot(Object)
-        if not Object then
-            return false
-        end
-
-        local Name = string.lower(Object.Name)
-
-        if string.find(Name, "slot") ~= nil or tonumber(Name) then
-            return true
-        end
-
-        for _, Attribute in {"Slot", "HotbarSlot", "Index", "Position"} do
-            if Object:GetAttribute(Attribute) ~= nil then
-                return true
-            end
-        end
-
-        return false
-    end
-
-    function Functions:GetSlotIndex(Object)
-        if not Object then
-            return 999
-        end
-
-        for _, Attribute in {"Slot", "HotbarSlot", "Index", "Position"} do
-            local Value = Object:GetAttribute(Attribute)
-            if tonumber(Value) then
-                return tonumber(Value)
-            end
-        end
-
-        local Number = string.match(Object.Name, "%d+")
-        return tonumber(Number) or 999
-    end
-
-    function Functions:GetHotbarItemName(Slot)
-        if not Slot then
-            return nil
-        end
-
-        local SlotName = Functions:GetInventoryItemName(Slot)
-        if SlotName and Weapon_Icons[SlotName] then
-            return SlotName
-        end
-
-        for _, Child in Slot:GetChildren() do
-            local ChildName = Functions:GetInventoryItemName(Child)
-            if ChildName and Weapon_Icons[ChildName] then
-                return ChildName
-            end
-        end
-
-        for _, Descendant in Slot:GetDescendants() do
-            local DescendantName = Functions:GetInventoryItemName(Descendant)
-            if DescendantName and Weapon_Icons[DescendantName] then
-                return DescendantName
-            end
-        end
-
-        return nil
-    end
-
-    function Functions:GetHotbarWeapons(Inventory)
-        local HotbarItems = {}
-        local Used = {}
-        local Slots = {}
-
-        local function AddSlot(Slot)
-            if not Slot or Used[Slot] then
-                return
-            end
-
-            Used[Slot] = true
-            table.insert(Slots, Slot)
-        end
-
-        for _, Child in Inventory:GetChildren() do
-            if Functions:IsHotbarContainer(Child) then
-                for _, Slot in Child:GetChildren() do
-                    AddSlot(Slot)
-                end
-            elseif Functions:IsHotbarSlot(Child) then
-                AddSlot(Child)
-            end
-        end
-
-        for _, Descendant in Inventory:GetDescendants() do
-            if Functions:IsHotbarSlot(Descendant) and (Functions:IsHotbarContainer(Descendant.Parent) or Descendant:GetAttribute("HotbarSlot") ~= nil) then
-                AddSlot(Descendant)
-            end
-        end
-
-        table.sort(Slots, function(A, B)
-            return Functions:GetSlotIndex(A) < Functions:GetSlotIndex(B)
-        end)
-
-        for _, Slot in Slots do
-            local ItemName = Functions:GetHotbarItemName(Slot)
-
-            if ItemName then
-                table.insert(HotbarItems, ItemName)
-            end
-        end
-
-        return HotbarItems
-    end
-
-    function Functions:GetEquippedWeapon(Player)
-        local Inventory = Functions:GetInventory(Player)
-        if not Inventory then
-            return "none"
-        end
-
-        for _, Item in Inventory:GetDescendants() do
-            local ItemName = Functions:GetInventoryItemName(Item)
-
-            if ItemName and Weapon_Icons[ItemName] then
-                if Functions:IsInventoryItemEquipped(Item) then
-                    return ItemName
-                end
-            end
+        if type(EquippedTool) == "string" and EquippedTool ~= "" then
+            return EquippedTool
         end
 
         return "none"
     end
 
     function Functions:GetPlayerTool(Player)
-        local Inventory = Functions:GetInventory(Player)
-        if not Inventory then
-            return "none"
-        end
-
-        local HotbarItems = Functions:GetHotbarWeapons(Inventory)
-
-        if #HotbarItems > 0 then
-            return table.concat(HotbarItems, " | ")
-        end
-
-        return Functions:GetEquippedWeapon(Player)
+        return Functions:GetEquippedToolName(Player)
     end
 
     function Functions:GetPlayerToolImg(Player)
-        local Inventory = Functions:GetInventory(Player)
-        local ToolName
-
-        if Inventory then
-            local HotbarItems = Functions:GetHotbarWeapons(Inventory)
-            ToolName = HotbarItems[1]
-        end
-
-        ToolName = ToolName or Functions:GetEquippedWeapon(Player)
+        local ToolName = Functions:GetEquippedToolName(Player)
         return Weapon_Icons[ToolName]
     end
     --
