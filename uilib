@@ -29,7 +29,7 @@ do --// UI Source
         Flags = { },
         MenuKeybind = tostring(Enum.KeyCode.X),
 
-        Directory = "Onix.lol Private PD",
+        Directory = "Radiance",
         Folders = {
             Assets = "/Assets",
             Configs = "/Configs"
@@ -5355,20 +5355,15 @@ do --// UI Source
                         end
                     end
 
-                    local OtherSection = SettingsPage:Section({Name = "other", Side = 2}) 
-
-                    do
+                    local OtherSection = SettingsPage:Section({Name = "other", Side = 2}) do
                         OtherSection:Button({
-                            Name = "unload1",
-                            Sense.Unload()
-            
-                            -- Unload the menu
-                            Library:Exit()
-        end
-    })
-end
+                            Name = "unload",
+                            Callback = function()
+                                Library:Exit()
+                            end
+                        })
 
-                        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.Insert, Callback = function(Value)
+                        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.RightShift, Callback = function(Value)
                             Library.MenuKeybind = Flags["uibind"].Key
                         end})
 
