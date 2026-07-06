@@ -24,11 +24,11 @@ local ESP = {
             FillRGB = Color3.fromRGB(119, 120, 255),
             VisibleFillRGB = Color3.fromRGB(119, 120, 255),
             HiddenFillRGB = Color3.fromRGB(255, 80, 80),
-            Fill_Transparency = 100,
+            Fill_Transparency = 45,
             OutlineRGB = Color3.fromRGB(119, 120, 255),
             VisibleOutlineRGB = Color3.fromRGB(119, 120, 255),
             HiddenOutlineRGB = Color3.fromRGB(255, 80, 80),
-            Outline_Transparency = 100,
+            Outline_Transparency = 0,
             VisibleCheck = true,
             Mode = "VisibleOnly",
         },
@@ -539,8 +539,8 @@ do -- Initalize
         local BehindHealthbar = Functions:Create("Frame", {Parent = ScreenGui, ZIndex = -1, BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0})
         local HealthbarGradient = Functions:Create("UIGradient", {Parent = Healthbar, Enabled = ESP.Drawing.Healthbar.Gradient, Rotation = -90, Color = ColorSequence.new{ColorSequenceKeypoint.new(0, ESP.Drawing.Healthbar.GradientRGB1), ColorSequenceKeypoint.new(0.5, ESP.Drawing.Healthbar.GradientRGB2), ColorSequenceKeypoint.new(1, ESP.Drawing.Healthbar.GradientRGB3)}})
         local HealthText = Functions:Create("TextLabel", {Parent = ScreenGui, Position = UDim2.new(0.5, 0, 0, 31), Size = UDim2.new(0, 100, 0, 20), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.Code, TextSize = ESP.FontSize, TextStrokeTransparency = 0, TextStrokeColor3 = Color3.fromRGB(0, 0, 0)})
-        local HiddenChams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 1, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(255, 80, 80), DepthMode = "AlwaysOnTop"})
-        local VisibleChams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 1, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(119, 120, 255), DepthMode = "Occluded"})
+        local HiddenChams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 0.45, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(255, 80, 80), DepthMode = Enum.HighlightDepthMode.AlwaysOnTop})
+        local VisibleChams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 0.45, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(119, 120, 255), DepthMode = Enum.HighlightDepthMode.Occluded})
         local WeaponIcon = Functions:Create("ImageLabel", {Parent = ScreenGui, BackgroundTransparency = 1, BorderColor3 = Color3.fromRGB(0, 0, 0), BorderSizePixel = 0, Size = UDim2.new(0, 40, 0, 40)})
         local Gradient3 = Functions:Create("UIGradient", {Parent = WeaponIcon, Rotation = -90, Enabled = ESP.Drawing.Weapons.Gradient, Color = ColorSequence.new{ColorSequenceKeypoint.new(0, ESP.Drawing.Weapons.GradientRGB1), ColorSequenceKeypoint.new(1, ESP.Drawing.Weapons.GradientRGB2)}})
         local LeftTop = Functions:Create("Frame", {Parent = ScreenGui, BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB, Position = UDim2.new(0, 0, 0, 0)})
@@ -659,13 +659,13 @@ do -- Initalize
                                 VisibleChams.Enabled = ESP.Drawing.Chams.Enabled
                                 VisibleChams.FillColor = ESP.Drawing.Chams.VisibleFillRGB or ESP.Drawing.Chams.FillRGB
                                 VisibleChams.OutlineColor = ESP.Drawing.Chams.VisibleOutlineRGB or ESP.Drawing.Chams.OutlineRGB
-                                VisibleChams.DepthMode = "Occluded"
+                                VisibleChams.DepthMode = Enum.HighlightDepthMode.Occluded
 
                                 HiddenChams.Adornee = plr.Character
                                 HiddenChams.Enabled = ESP.Drawing.Chams.Enabled and ShowHiddenChams
                                 HiddenChams.FillColor = ESP.Drawing.Chams.HiddenFillRGB or ESP.Drawing.Chams.FillRGB
                                 HiddenChams.OutlineColor = ESP.Drawing.Chams.HiddenOutlineRGB or ESP.Drawing.Chams.OutlineRGB
-                                HiddenChams.DepthMode = "AlwaysOnTop"
+                                HiddenChams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 
                                 do -- Breathe
                                     if ESP.Drawing.Chams.Thermal then
