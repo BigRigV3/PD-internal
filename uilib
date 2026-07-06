@@ -1,4 +1,3 @@
-local Sense = loadstring(game:HttpGet('https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib'))()
 
 do --// UI Source
     if getgenv().Library and getgenv().Library.Exit then
@@ -5361,7 +5360,7 @@ do --// UI Source
                         OtherSection:Button({
                             Name = "unload",
                             Callback = function()
-                            Sense.Unload()   
+                               
                             Library:Exit()
                             end
                         })
