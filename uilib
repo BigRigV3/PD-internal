@@ -5363,7 +5363,7 @@ do --// UI Source
                             end
                         })
 
-                        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.RightShift, Callback = function(Value)
+                        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.insert, Callback = function(Value)
                             Library.MenuKeybind = Flags["uibind"].Key
                         end})
 
