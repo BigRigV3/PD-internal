@@ -22,15 +22,10 @@ local ESP = {
             Enabled  = true,
             Thermal = true,
             FillRGB = Color3.fromRGB(119, 120, 255),
-            VisibleFillRGB = Color3.fromRGB(119, 120, 255),
-            HiddenFillRGB = Color3.fromRGB(255, 80, 80),
-            Fill_Transparency = 45,
+            Fill_Transparency = 100,
             OutlineRGB = Color3.fromRGB(119, 120, 255),
-            VisibleOutlineRGB = Color3.fromRGB(119, 120, 255),
-            HiddenOutlineRGB = Color3.fromRGB(255, 80, 80),
-            Outline_Transparency = 0,
+            Outline_Transparency = 100,
             VisibleCheck = true,
-            Mode = "VisibleOnly",
         },
         Names = {
             Enabled = true,
@@ -48,7 +43,6 @@ local ESP = {
             Enabled = true, WeaponTextRGB = Color3.fromRGB(119, 120, 255),
             Outlined = false,
             Icons = true, RGB = Color3.fromRGB(255, 255, 255),
-            Source = "EquippedTool",
             Gradient = false,
             GradientRGB1 = Color3.fromRGB(255, 255, 255), GradientRGB2 = Color3.fromRGB(119, 120, 255),
         },
@@ -459,39 +453,218 @@ do
         return _Instance;
     end
     --
-    function Functions:GetReplicatedPlayer(Player)
+    function Functions:GetInventory(Player)
         local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
-        return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
+        PlayerFolder = PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
+        return PlayerFolder and PlayerFolder:FindFirstChild("Inventory")
     end
 
-    function Functions:GetEquippedToolValue(Player)
-        local ReplicatedPlayer = Functions:GetReplicatedPlayer(Player)
-        local Status = ReplicatedPlayer and ReplicatedPlayer:FindFirstChild("Status")
-        local GameplayVariables = Status and Status:FindFirstChild("GameplayVariables")
-        local EquippedTool = GameplayVariables and GameplayVariables:FindFirstChild("EquippedTool")
-        return EquippedTool and EquippedTool.Value
-    end
-
-    function Functions:GetEquippedToolName(Player)
-        local EquippedTool = Functions:GetEquippedToolValue(Player)
-
-        if typeof(EquippedTool) == "Instance" then
-            return EquippedTool.Name
+    function Functions:GetInventoryItemName(Item)
+        if not Item then
+            return nil
         end
 
-        if type(EquippedTool) == "string" and EquippedTool ~= "" then
-            return EquippedTool
+        for _, Attribute in {"Item", "ItemName", "Name", "Weapon", "WeaponName"} do
+            local Value = Item:GetAttribute(Attribute)
+            if type(Value) == "string" and Value ~= "" then
+                return Value
+            end
+        end
+
+        if Item:IsA("StringValue") and Item.Value ~= "" then
+            return Item.Value
+        end
+
+        if Item:IsA("ObjectValue") and Item.Value then
+            return Item.Value.Name
+        end
+
+        return Item.Name
+    end
+
+    function Functions:IsInventoryItemEquipped(Item)
+        if not Item then
+            return false
+        end
+
+        for _, Attribute in {"Equipped", "IsEquipped", "Selected", "Active"} do
+            if Item:GetAttribute(Attribute) == true then
+                return true
+            end
+        end
+
+        for _, ChildName in {"Equipped", "IsEquipped", "Selected", "Active"} do
+            local Child = Item:FindFirstChild(ChildName)
+            if Child and Child:IsA("BoolValue") and Child.Value then
+                return true
+            end
+        end
+
+        local Parent = Item.Parent
+        return Parent and string.find(string.lower(Parent.Name), "equipped") ~= nil
+    end
+
+    function Functions:IsHotbarContainer(Object)
+        if not Object then
+            return false
+        end
+
+        local Name = string.lower(Object.Name)
+        return string.find(Name, "hotbar") ~= nil or string.find(Name, "quick") ~= nil
+    end
+
+    function Functions:IsHotbarSlot(Object)
+        if not Object then
+            return false
+        end
+
+        local Name = string.lower(Object.Name)
+
+        if string.find(Name, "slot") ~= nil or tonumber(Name) then
+            return true
+        end
+
+        for _, Attribute in {"Slot", "HotbarSlot", "Index", "Position"} do
+            if Object:GetAttribute(Attribute) ~= nil then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    function Functions:GetSlotIndex(Object)
+        if not Object then
+            return 999
+        end
+
+        for _, Attribute in {"Slot", "HotbarSlot", "Index", "Position"} do
+            local Value = Object:GetAttribute(Attribute)
+            if tonumber(Value) then
+                return tonumber(Value)
+            end
+        end
+
+        local Number = string.match(Object.Name, "%d+")
+        return tonumber(Number) or 999
+    end
+
+    function Functions:GetHotbarItemName(Slot)
+        if not Slot then
+            return nil
+        end
+
+        local SlotName = Functions:GetInventoryItemName(Slot)
+        if SlotName and Weapon_Icons[SlotName] then
+            return SlotName
+        end
+
+        for _, Child in Slot:GetChildren() do
+            local ChildName = Functions:GetInventoryItemName(Child)
+            if ChildName and Weapon_Icons[ChildName] then
+                return ChildName
+            end
+        end
+
+        for _, Descendant in Slot:GetDescendants() do
+            local DescendantName = Functions:GetInventoryItemName(Descendant)
+            if DescendantName and Weapon_Icons[DescendantName] then
+                return DescendantName
+            end
+        end
+
+        return nil
+    end
+
+    function Functions:GetHotbarWeapons(Inventory)
+        local HotbarItems = {}
+        local Used = {}
+        local Slots = {}
+
+        local function AddSlot(Slot)
+            if not Slot or Used[Slot] then
+                return
+            end
+
+            Used[Slot] = true
+            table.insert(Slots, Slot)
+        end
+
+        for _, Child in Inventory:GetChildren() do
+            if Functions:IsHotbarContainer(Child) then
+                for _, Slot in Child:GetChildren() do
+                    AddSlot(Slot)
+                end
+            elseif Functions:IsHotbarSlot(Child) then
+                AddSlot(Child)
+            end
+        end
+
+        for _, Descendant in Inventory:GetDescendants() do
+            if Functions:IsHotbarSlot(Descendant) and (Functions:IsHotbarContainer(Descendant.Parent) or Descendant:GetAttribute("HotbarSlot") ~= nil) then
+                AddSlot(Descendant)
+            end
+        end
+
+        table.sort(Slots, function(A, B)
+            return Functions:GetSlotIndex(A) < Functions:GetSlotIndex(B)
+        end)
+
+        for _, Slot in Slots do
+            local ItemName = Functions:GetHotbarItemName(Slot)
+
+            if ItemName then
+                table.insert(HotbarItems, ItemName)
+            end
+        end
+
+        return HotbarItems
+    end
+
+    function Functions:GetEquippedWeapon(Player)
+        local Inventory = Functions:GetInventory(Player)
+        if not Inventory then
+            return "none"
+        end
+
+        for _, Item in Inventory:GetDescendants() do
+            local ItemName = Functions:GetInventoryItemName(Item)
+
+            if ItemName and Weapon_Icons[ItemName] then
+                if Functions:IsInventoryItemEquipped(Item) then
+                    return ItemName
+                end
+            end
         end
 
         return "none"
     end
 
     function Functions:GetPlayerTool(Player)
-        return Functions:GetEquippedToolName(Player)
+        local Inventory = Functions:GetInventory(Player)
+        if not Inventory then
+            return "none"
+        end
+
+        local HotbarItems = Functions:GetHotbarWeapons(Inventory)
+
+        if #HotbarItems > 0 then
+            return table.concat(HotbarItems, " | ")
+        end
+
+        return Functions:GetEquippedWeapon(Player)
     end
 
     function Functions:GetPlayerToolImg(Player)
-        local ToolName = Functions:GetEquippedToolName(Player)
+        local Inventory = Functions:GetInventory(Player)
+        local ToolName
+
+        if Inventory then
+            local HotbarItems = Functions:GetHotbarWeapons(Inventory)
+            ToolName = HotbarItems[1]
+        end
+
+        ToolName = ToolName or Functions:GetEquippedWeapon(Player)
         return Weapon_Icons[ToolName]
     end
     --
@@ -539,8 +712,7 @@ do -- Initalize
         local BehindHealthbar = Functions:Create("Frame", {Parent = ScreenGui, ZIndex = -1, BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0})
         local HealthbarGradient = Functions:Create("UIGradient", {Parent = Healthbar, Enabled = ESP.Drawing.Healthbar.Gradient, Rotation = -90, Color = ColorSequence.new{ColorSequenceKeypoint.new(0, ESP.Drawing.Healthbar.GradientRGB1), ColorSequenceKeypoint.new(0.5, ESP.Drawing.Healthbar.GradientRGB2), ColorSequenceKeypoint.new(1, ESP.Drawing.Healthbar.GradientRGB3)}})
         local HealthText = Functions:Create("TextLabel", {Parent = ScreenGui, Position = UDim2.new(0.5, 0, 0, 31), Size = UDim2.new(0, 100, 0, 20), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.Code, TextSize = ESP.FontSize, TextStrokeTransparency = 0, TextStrokeColor3 = Color3.fromRGB(0, 0, 0)})
-        local HiddenChams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 0.45, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(255, 80, 80), DepthMode = Enum.HighlightDepthMode.AlwaysOnTop})
-        local VisibleChams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 0.45, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(119, 120, 255), DepthMode = Enum.HighlightDepthMode.Occluded})
+        local Chams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 1, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(119, 120, 255), DepthMode = "AlwaysOnTop"})
         local WeaponIcon = Functions:Create("ImageLabel", {Parent = ScreenGui, BackgroundTransparency = 1, BorderColor3 = Color3.fromRGB(0, 0, 0), BorderSizePixel = 0, Size = UDim2.new(0, 40, 0, 40)})
         local Gradient3 = Functions:Create("UIGradient", {Parent = WeaponIcon, Rotation = -90, Enabled = ESP.Drawing.Weapons.Gradient, Color = ColorSequence.new{ColorSequenceKeypoint.new(0, ESP.Drawing.Weapons.GradientRGB1), ColorSequenceKeypoint.new(1, ESP.Drawing.Weapons.GradientRGB2)}})
         local LeftTop = Functions:Create("Frame", {Parent = ScreenGui, BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB, Position = UDim2.new(0, 0, 0, 0)})
@@ -575,8 +747,7 @@ do -- Initalize
                 BottomRightSide.Visible = false;
                 BottomRightDown.Visible = false;
                 Flag1.Visible = false;
-                VisibleChams.Enabled = false;
-                HiddenChams.Enabled = false;
+                Chams.Enabled = false;
                 Flag2.Visible = false;
                 if not plr then
                     ScreenGui:Destroy();
@@ -636,8 +807,7 @@ do -- Initalize
                             Functions:FadeOutOnDist(RightSide, Dist)
                             Functions:FadeOutOnDist(BottomRightSide, Dist)
                             Functions:FadeOutOnDist(BottomRightDown, Dist)
-                            Functions:FadeOutOnDist(VisibleChams, Dist)
-                            Functions:FadeOutOnDist(HiddenChams, Dist)
+                            Functions:FadeOutOnDist(Chams, Dist)
                             Functions:FadeOutOnDist(Flag1, Dist)
                             Functions:FadeOutOnDist(Flag2, Dist)
                         end
@@ -652,34 +822,21 @@ do -- Initalize
                         if IsValidTarget then
 
                             do -- Chams
-                                local ChamsMode = ESP.Drawing.Chams.Mode or (ESP.Drawing.Chams.VisibleCheck and "VisibleOnly" or "VisibleAndHidden")
-                                local ShowHiddenChams = ChamsMode == "VisibleAndHidden"
-
-                                VisibleChams.Adornee = plr.Character
-                                VisibleChams.Enabled = ESP.Drawing.Chams.Enabled
-                                VisibleChams.FillColor = ESP.Drawing.Chams.VisibleFillRGB or ESP.Drawing.Chams.FillRGB
-                                VisibleChams.OutlineColor = ESP.Drawing.Chams.VisibleOutlineRGB or ESP.Drawing.Chams.OutlineRGB
-                                VisibleChams.DepthMode = Enum.HighlightDepthMode.Occluded
-
-                                HiddenChams.Adornee = plr.Character
-                                HiddenChams.Enabled = ESP.Drawing.Chams.Enabled and ShowHiddenChams
-                                HiddenChams.FillColor = ESP.Drawing.Chams.HiddenFillRGB or ESP.Drawing.Chams.FillRGB
-                                HiddenChams.OutlineColor = ESP.Drawing.Chams.HiddenOutlineRGB or ESP.Drawing.Chams.OutlineRGB
-                                HiddenChams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-
+                                Chams.Adornee = plr.Character
+                                Chams.Enabled = ESP.Drawing.Chams.Enabled
+                                Chams.FillColor = ESP.Drawing.Chams.FillRGB
+                                Chams.OutlineColor = ESP.Drawing.Chams.OutlineRGB
                                 do -- Breathe
                                     if ESP.Drawing.Chams.Thermal then
                                         local breathe_effect = math.atan(math.sin(tick() * 2)) * 2 / math.pi
-                                        VisibleChams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * breathe_effect * 0.01
-                                        VisibleChams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * breathe_effect * 0.01
-                                        HiddenChams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * breathe_effect * 0.01
-                                        HiddenChams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * breathe_effect * 0.01
-                                    else
-                                        VisibleChams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * 0.01
-                                        VisibleChams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * 0.01
-                                        HiddenChams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * 0.01
-                                        HiddenChams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * 0.01
+                                        Chams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * breathe_effect * 0.01
+                                        Chams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * breathe_effect * 0.01
                                     end
+                                end
+                                if ESP.Drawing.Chams.VisibleCheck then
+                                    Chams.DepthMode = "Occluded"
+                                else
+                                    Chams.DepthMode = "AlwaysOnTop"
                                 end
                             end;
 
