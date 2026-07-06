@@ -22,10 +22,15 @@ local ESP = {
             Enabled  = true,
             Thermal = true,
             FillRGB = Color3.fromRGB(119, 120, 255),
+            VisibleFillRGB = Color3.fromRGB(119, 120, 255),
+            HiddenFillRGB = Color3.fromRGB(255, 80, 80),
             Fill_Transparency = 100,
             OutlineRGB = Color3.fromRGB(119, 120, 255),
+            VisibleOutlineRGB = Color3.fromRGB(119, 120, 255),
+            HiddenOutlineRGB = Color3.fromRGB(255, 80, 80),
             Outline_Transparency = 100,
             VisibleCheck = true,
+            Mode = "VisibleOnly",
         },
         Names = {
             Enabled = true,
@@ -712,7 +717,8 @@ do -- Initalize
         local BehindHealthbar = Functions:Create("Frame", {Parent = ScreenGui, ZIndex = -1, BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 0})
         local HealthbarGradient = Functions:Create("UIGradient", {Parent = Healthbar, Enabled = ESP.Drawing.Healthbar.Gradient, Rotation = -90, Color = ColorSequence.new{ColorSequenceKeypoint.new(0, ESP.Drawing.Healthbar.GradientRGB1), ColorSequenceKeypoint.new(0.5, ESP.Drawing.Healthbar.GradientRGB2), ColorSequenceKeypoint.new(1, ESP.Drawing.Healthbar.GradientRGB3)}})
         local HealthText = Functions:Create("TextLabel", {Parent = ScreenGui, Position = UDim2.new(0.5, 0, 0, 31), Size = UDim2.new(0, 100, 0, 20), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.Code, TextSize = ESP.FontSize, TextStrokeTransparency = 0, TextStrokeColor3 = Color3.fromRGB(0, 0, 0)})
-        local Chams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 1, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(119, 120, 255), DepthMode = "AlwaysOnTop"})
+        local HiddenChams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 1, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(255, 80, 80), DepthMode = "AlwaysOnTop"})
+        local VisibleChams = Functions:Create("Highlight", {Parent = ScreenGui, FillTransparency = 1, OutlineTransparency = 0, OutlineColor = Color3.fromRGB(119, 120, 255), DepthMode = "Occluded"})
         local WeaponIcon = Functions:Create("ImageLabel", {Parent = ScreenGui, BackgroundTransparency = 1, BorderColor3 = Color3.fromRGB(0, 0, 0), BorderSizePixel = 0, Size = UDim2.new(0, 40, 0, 40)})
         local Gradient3 = Functions:Create("UIGradient", {Parent = WeaponIcon, Rotation = -90, Enabled = ESP.Drawing.Weapons.Gradient, Color = ColorSequence.new{ColorSequenceKeypoint.new(0, ESP.Drawing.Weapons.GradientRGB1), ColorSequenceKeypoint.new(1, ESP.Drawing.Weapons.GradientRGB2)}})
         local LeftTop = Functions:Create("Frame", {Parent = ScreenGui, BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB, Position = UDim2.new(0, 0, 0, 0)})
@@ -747,7 +753,8 @@ do -- Initalize
                 BottomRightSide.Visible = false;
                 BottomRightDown.Visible = false;
                 Flag1.Visible = false;
-                Chams.Enabled = false;
+                VisibleChams.Enabled = false;
+                HiddenChams.Enabled = false;
                 Flag2.Visible = false;
                 if not plr then
                     ScreenGui:Destroy();
@@ -807,7 +814,8 @@ do -- Initalize
                             Functions:FadeOutOnDist(RightSide, Dist)
                             Functions:FadeOutOnDist(BottomRightSide, Dist)
                             Functions:FadeOutOnDist(BottomRightDown, Dist)
-                            Functions:FadeOutOnDist(Chams, Dist)
+                            Functions:FadeOutOnDist(VisibleChams, Dist)
+                            Functions:FadeOutOnDist(HiddenChams, Dist)
                             Functions:FadeOutOnDist(Flag1, Dist)
                             Functions:FadeOutOnDist(Flag2, Dist)
                         end
@@ -822,21 +830,34 @@ do -- Initalize
                         if IsValidTarget then
 
                             do -- Chams
-                                Chams.Adornee = plr.Character
-                                Chams.Enabled = ESP.Drawing.Chams.Enabled
-                                Chams.FillColor = ESP.Drawing.Chams.FillRGB
-                                Chams.OutlineColor = ESP.Drawing.Chams.OutlineRGB
+                                local ChamsMode = ESP.Drawing.Chams.Mode or (ESP.Drawing.Chams.VisibleCheck and "VisibleOnly" or "VisibleAndHidden")
+                                local ShowHiddenChams = ChamsMode == "VisibleAndHidden"
+
+                                VisibleChams.Adornee = plr.Character
+                                VisibleChams.Enabled = ESP.Drawing.Chams.Enabled
+                                VisibleChams.FillColor = ESP.Drawing.Chams.VisibleFillRGB or ESP.Drawing.Chams.FillRGB
+                                VisibleChams.OutlineColor = ESP.Drawing.Chams.VisibleOutlineRGB or ESP.Drawing.Chams.OutlineRGB
+                                VisibleChams.DepthMode = "Occluded"
+
+                                HiddenChams.Adornee = plr.Character
+                                HiddenChams.Enabled = ESP.Drawing.Chams.Enabled and ShowHiddenChams
+                                HiddenChams.FillColor = ESP.Drawing.Chams.HiddenFillRGB or ESP.Drawing.Chams.FillRGB
+                                HiddenChams.OutlineColor = ESP.Drawing.Chams.HiddenOutlineRGB or ESP.Drawing.Chams.OutlineRGB
+                                HiddenChams.DepthMode = "AlwaysOnTop"
+
                                 do -- Breathe
                                     if ESP.Drawing.Chams.Thermal then
                                         local breathe_effect = math.atan(math.sin(tick() * 2)) * 2 / math.pi
-                                        Chams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * breathe_effect * 0.01
-                                        Chams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * breathe_effect * 0.01
+                                        VisibleChams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * breathe_effect * 0.01
+                                        VisibleChams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * breathe_effect * 0.01
+                                        HiddenChams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * breathe_effect * 0.01
+                                        HiddenChams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * breathe_effect * 0.01
+                                    else
+                                        VisibleChams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * 0.01
+                                        VisibleChams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * 0.01
+                                        HiddenChams.FillTransparency = ESP.Drawing.Chams.Fill_Transparency * 0.01
+                                        HiddenChams.OutlineTransparency = ESP.Drawing.Chams.Outline_Transparency * 0.01
                                     end
-                                end
-                                if ESP.Drawing.Chams.VisibleCheck then
-                                    Chams.DepthMode = "Occluded"
-                                else
-                                    Chams.DepthMode = "AlwaysOnTop"
                                 end
                             end;
 
