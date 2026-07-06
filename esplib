@@ -1,6 +1,6 @@
 cloneref = cloneref or function(Object) return Object end
 
-local Workspace, RunService, Players, CoreGui = cloneref(game:GetService("Workspace")), cloneref(game:GetService("RunService")), cloneref(game:GetService("Players")), game:GetService("CoreGui")
+local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game:GetService("Workspace")), cloneref(game:GetService("RunService")), cloneref(game:GetService("Players")), game:GetService("CoreGui"), cloneref(game:GetService("ReplicatedStorage"))
 
 local ESP = {
     Enabled = true,
@@ -92,24 +92,62 @@ local RotationAngle, Tick = -45, tick();
 
 -- Weapon Images
 local Weapon_Icons = {
-    ["Wooden Bow"] = "http://www.roblox.com/asset/?id=17677465400",
-    ["Crossbow"] = "http://www.roblox.com/asset/?id=17677473017",
-    ["Salvaged SMG"] = "http://www.roblox.com/asset/?id=17677463033",
-    ["Salvaged AK47"] = "http://www.roblox.com/asset/?id=17677455113",
-    ["Salvaged AK74u"] = "http://www.roblox.com/asset/?id=17677442346",
-    ["Salvaged M14"] = "http://www.roblox.com/asset/?id=17677444642",
-    ["Salvaged Python"] = "http://www.roblox.com/asset/?id=17677451737",
-    ["Military PKM"] = "http://www.roblox.com/asset/?id=17677449448",
-    ["Military M4A1"] = "http://www.roblox.com/asset/?id=17677479536",
-    ["Bruno's M4A1"] = "http://www.roblox.com/asset/?id=17677471185",
-    ["Military Barrett"] = "http://www.roblox.com/asset/?id=17677482998",
-    ["Salvaged Skorpion"] = "http://www.roblox.com/asset/?id=17677459658",
-    ["Salvaged Pump Action"] = "http://www.roblox.com/asset/?id=17677457186",
-    ["Military AA12"] = "http://www.roblox.com/asset/?id=17677475227",
-    ["Salvaged Break Action"] = "http://www.roblox.com/asset/?id=17677468751",
-    ["Salvaged Pipe Rifle"] = "http://www.roblox.com/asset/?id=17677468751",
-    ["Salvaged P250"] = "http://www.roblox.com/asset/?id=17677447257",
-    ["Nail Gun"] = "http://www.roblox.com/asset/?id=17677484756"
+    ["ADAR15"] = "rbxassetid://117782282727684",
+    ["AKM"] = "rbxassetid://7471681200",
+    ["AKMN"] = "rbxassetid://8158043417",
+    ["AnarchyTomahawk"] = "rbxassetid://11002451667",
+    ["AsVal"] = "rbxassetid://9263423355",
+    ["ButterflyKnife"] = "rbxassetid://75300920707700",
+    ["Cutlass"] = "rbxassetid://14311213495",
+    ["DV2"] = "rbxassetid://7964130861",
+    ["FAL"] = "rbxassetid://116484830418371",
+    ["FlareGun"] = "rbxassetid://8931895425",
+    ["GoldenDV2"] = "rbxassetid://9747263740",
+    ["GoldenMakarov"] = "rbxassetid://84012111297023",
+    ["Greatsword"] = "rbxassetid://118076023729255",
+    ["IceAxe"] = "rbxassetid://11998033964",
+    ["IceDagger"] = "rbxassetid://12260320433",
+    ["IZh12"] = "rbxassetid://13011056085",
+    ["IZh81"] = "rbxassetid://9929752194",
+    ["Karambit"] = "rbxassetid://13519650673",
+    ["Kukri"] = "rbxassetid://136791181068528",
+    ["Longsword"] = "rbxassetid://16376001523",
+    ["Lynx"] = "rbxassetid://8860329302",
+    ["M4"] = "rbxassetid://8911450991",
+    ["M9Fade"] = "rbxassetid://137776697472372",
+    ["M9XR7"] = "rbxassetid://97990076433554",
+    ["Makarov"] = "rbxassetid://7879638446",
+    ["MK23"] = "rbxassetid://17440342949",
+    ["Mosin"] = "rbxassetid://7899204543",
+    ["MP443"] = "rbxassetid://8528052134",
+    ["MP5SD"] = "rbxassetid://10319672857",
+    ["PKM"] = "rbxassetid://16253399098",
+    ["PPSH41"] = "rbxassetid://8408655124",
+    ["R700"] = "rbxassetid://17425495791",
+    ["RPG7"] = "rbxassetid://14615821056",
+    ["Saiga12"] = "rbxassetid://12301160081",
+    ["Scythe"] = "rbxassetid://72885076325176",
+    ["SKS"] = "rbxassetid://15038106009",
+    ["SPSh44"] = "rbxassetid://12853842959",
+    ["SVD"] = "rbxassetid://8394728464",
+    ["T12W"] = "rbxassetid://119349757058515",
+    ["TFZ0"] = "rbxassetid://8569455943",
+    ["TFZ98S"] = "rbxassetid://12698791753",
+    ["TOZ106"] = "rbxassetid://120052447777071",
+    ["TT33"] = "rbxassetid://9920461910",
+    ["VZ61"] = "rbxassetid://11131352236"
+};
+
+local WeaponPriority = {
+    ADAR15 = true, AKM = true, AKMN = true, AnarchyTomahawk = true, AsVal = true,
+    ButterflyKnife = true, Cutlass = true, DV2 = true, FAL = true, FlareGun = true,
+    GoldenDV2 = true, GoldenMakarov = true, Greatsword = true, IceAxe = true,
+    IceDagger = true, IZh12 = true, IZh81 = true, Karambit = true, Kukri = true,
+    Longsword = true, Lynx = true, M4 = true, M9Fade = true, M9XR7 = true,
+    Makarov = true, MK23 = true, Mosin = true, MP443 = true, MP5SD = true,
+    PKM = true, PPSH41 = true, R700 = true, RPG7 = true, Saiga12 = true,
+    Scythe = true, SKS = true, SPSh44 = true, SVD = true, T12W = true,
+    TFZ0 = true, TFZ98S = true, TOZ106 = true, TT33 = true, VZ61 = true
 };
 
 -- Functions
@@ -123,22 +161,82 @@ do
         return _Instance;
     end
     --
-    function Functions:GetPlayerTool(Character)
-        for _, value in pairs(Character:GetChildren()) do
-            if value.Name ~= "HolsterModel" and value:IsA("Model") and value.Name ~= "Hair" and (value:FindFirstChild("Detail") or value:FindFirstChild("Main") or value:FindFirstChild("Handle") or value:FindFirstChild("Attachments") or value:FindFirstChild("ArrowAttach") or value:FindFirstChild("Attach")) and value.PrimaryPart then
-                return value.Name;
+    function Functions:GetInventory(Player)
+        local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+        PlayerFolder = PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
+        return PlayerFolder and PlayerFolder:FindFirstChild("Inventory")
+    end
+
+    function Functions:GetInventoryItemName(Item)
+        if not Item then
+            return nil
+        end
+
+        for _, Attribute in {"Item", "ItemName", "Name", "Weapon", "WeaponName"} do
+            local Value = Item:GetAttribute(Attribute)
+            if type(Value) == "string" and Value ~= "" then
+                return Value
             end
         end
-        return "none"
-    end    
-    function Functions:GetPlayerToolImg(Character)
-        for _, value in pairs(Character:GetChildren()) do
-            if value.Name ~= "HolsterModel" and value:IsA("Model") and value.Name ~= "Hair" and (value:FindFirstChild("Detail") or value:FindFirstChild("Main") or value:FindFirstChild("Handle") or value:FindFirstChild("Attachments") or value:FindFirstChild("ArrowAttach") or value:FindFirstChild("Attach")) and value.PrimaryPart then
-                return Weapon_Icons[value.Name] ;
+
+        if Item:IsA("StringValue") and Item.Value ~= "" then
+            return Item.Value
+        end
+
+        return Item.Name
+    end
+
+    function Functions:IsInventoryItemEquipped(Item)
+        if not Item then
+            return false
+        end
+
+        for _, Attribute in {"Equipped", "IsEquipped", "Selected", "Active"} do
+            if Item:GetAttribute(Attribute) == true then
+                return true
             end
         end
-        return nil
-    end     
+
+        for _, ChildName in {"Equipped", "IsEquipped", "Selected", "Active"} do
+            local Child = Item:FindFirstChild(ChildName)
+            if Child and Child:IsA("BoolValue") and Child.Value then
+                return true
+            end
+        end
+
+        local Parent = Item.Parent
+        return Parent and string.find(string.lower(Parent.Name), "equipped") ~= nil
+    end
+
+    function Functions:GetPlayerTool(Player)
+        local Inventory = Functions:GetInventory(Player)
+        if not Inventory then
+            return "none"
+        end
+
+        local FirstKnownWeapon
+
+        for _, Item in Inventory:GetDescendants() do
+            local ItemName = Functions:GetInventoryItemName(Item)
+
+            if ItemName and Weapon_Icons[ItemName] then
+                if Functions:IsInventoryItemEquipped(Item) then
+                    return ItemName
+                end
+
+                if WeaponPriority[ItemName] and not FirstKnownWeapon then
+                    FirstKnownWeapon = ItemName
+                end
+            end
+        end
+
+        return FirstKnownWeapon or "none"
+    end
+
+    function Functions:GetPlayerToolImg(Player)
+        local ToolName = Functions:GetPlayerTool(Player)
+        return Weapon_Icons[ToolName]
+    end
     --
     function Functions:FadeOutOnDist(element, distance)
         local transparency = math.max(0.1, 1 - (distance / ESP.MaxDistance))
@@ -492,7 +590,7 @@ do -- Initalize
                             end
 
                             do -- Weapons
-                                local currentTool = Functions:GetPlayerTool(plr.Character)
+                                local currentTool = Functions:GetPlayerTool(plr)
                                 Gradient3.Enabled = ESP.Drawing.Weapons.Gradient
                                 Gradient3.Color = ColorSequence.new{
                                     ColorSequenceKeypoint.new(0, ESP.Drawing.Weapons.GradientRGB1),
@@ -503,7 +601,7 @@ do -- Initalize
                                 Weapon.Visible = ESP.Drawing.Weapons.Enabled
                                 
                                 do -- Weapon icons
-                                    local WeaponImage = Functions:GetPlayerToolImg(plr.Character)
+                                    local WeaponImage = Functions:GetPlayerToolImg(plr)
                                     WeaponIcon.ImageColor3 = ESP.Drawing.Weapons.RGB
                                     if WeaponImage then
                                         WeaponIcon.Visible = ESP.Drawing.Weapons.Icons
