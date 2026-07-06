@@ -5359,11 +5359,17 @@ do --// UI Source
                         OtherSection:Button({
                             Name = "unload",
                             Callback = function()
+                                Sense.teamSettings.enemy.enabled = state
+        
+                            if not state then
+                            -- Force disable other possible ESP types
+                                Sense.teamSettings.team.enabled = false
+                                Sense.teamSettings.neutral.enabled = false
                                 Library:Exit()
                             end
                         })
 
-                        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.insert, Callback = function(Value)
+                        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.Insert, Callback = function(Value)
                             Library.MenuKeybind = Flags["uibind"].Key
                         end})
 
