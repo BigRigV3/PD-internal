@@ -1,8 +1,5 @@
 local Sense = loadstring(game:HttpGet('https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib'))()
-Sense.teamSettings.enemy.enabled = false
-Sense.teamSettings.enemy.box = true
-Sense.teamSettings.enemy.boxColor[1] = Color3.new(0, 0.25, 0.75)
-Sense.Load()
+
 do --// UI Source
     if getgenv().Library and getgenv().Library.Exit then
         getgenv().Library:Exit()
