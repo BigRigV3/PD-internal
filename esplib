@@ -364,7 +364,8 @@ do -- Initalize
                             do -- Boxes
                                 Box.Position = UDim2.new(0, Pos.X - w / 2, 0, Pos.Y - h / 2)
                                 Box.Size = UDim2.new(0, w, 0, h)
-                                Box.Visible = ESP.Drawing.Boxes.Full.Enabled or ESP.Drawing.Boxes.Filled.Enabled
+                                ESP.Drawing.Boxes.Full.Enabled = true
+                                Box.Visible = true
                                 Box.BorderColor3 = ESP.Drawing.Boxes.Full.RGB
 
                                 Gradient1.Enabled = ESP.Drawing.Boxes.Filled.Enabled and ESP.Drawing.Boxes.GradientFill
@@ -373,7 +374,7 @@ do -- Initalize
                                     ColorSequenceKeypoint.new(1, ESP.Drawing.Boxes.GradientFillRGB2)
                                 }
 
-                                Outline.Enabled = ESP.Drawing.Boxes.Full.Enabled and ESP.Drawing.Boxes.Gradient
+                                Outline.Enabled = ESP.Drawing.Boxes.Gradient
                                 Outline.Color = ESP.Drawing.Boxes.Full.RGB
                                 Gradient2.Enabled = ESP.Drawing.Boxes.Gradient
                                 Gradient2.Color = ColorSequence.new{
@@ -385,10 +386,10 @@ do -- Initalize
                                 if ESP.Drawing.Boxes.Filled.Enabled then
                                     Box.BackgroundColor3 = ESP.Drawing.Boxes.Filled.RGB
                                     Box.BackgroundTransparency = ESP.Drawing.Boxes.Filled.Transparency
-                                    Box.BorderSizePixel = ESP.Drawing.Boxes.Full.Enabled and 1 or 0
+                                    Box.BorderSizePixel = 1
                                 else
                                     Box.BackgroundTransparency = 1
-                                    Box.BorderSizePixel = ESP.Drawing.Boxes.Full.Enabled and 1 or 0
+                                    Box.BorderSizePixel = 1
                                 end
                                 -- Animation
                                 RotationAngle = RotationAngle + (tick() - Tick) * ESP.Drawing.Boxes.RotationSpeed * math.cos(math.pi / 4 * tick() - math.pi / 2)
