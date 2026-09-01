@@ -474,6 +474,33 @@ local Weapon_Icons = {
     ["MK23"] = "rbxassetid://17440342949",
 };
 
+-- Project Delta character data.  Only these avatar parts are used for the
+-- 2D bounds, so backpacks, helmets, weapons, and other attached gear cannot
+-- inflate the player box.
+local ProjectDeltaBodyParts = {
+    Head = true,
+    Torso = true,
+    ["Left Arm"] = true,
+    ["Right Arm"] = true,
+    ["Left Leg"] = true,
+    ["Right Leg"] = true,
+    UpperTorso = true,
+    LowerTorso = true,
+    HumanoidRootPart = true,
+    LeftUpperArm = true,
+    LeftLowerArm = true,
+    LeftHand = true,
+    RightUpperArm = true,
+    RightLowerArm = true,
+    RightHand = true,
+    LeftUpperLeg = true,
+    LeftLowerLeg = true,
+    LeftFoot = true,
+    RightUpperLeg = true,
+    RightLowerLeg = true,
+    RightFoot = true,
+}
+
 -- Functions
 local Functions = {}
 do
@@ -488,6 +515,14 @@ do
     function Functions:GetReplicatedPlayer(Player)
         local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
         return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
+    end
+
+    function Functions:IsProjectDeltaBodyPart(Part)
+        return Part
+            and Part:IsA("BasePart")
+            and Part.Transparency < 1
+            and Part.LocalTransparencyModifier < 1
+            and ProjectDeltaBodyParts[Part.Name] == true
     end
 
     function Functions:GetEquippedToolValue(Player)
@@ -822,6 +857,8 @@ do -- Initalize
             local LastHealthGradient1, LastHealthGradient2, LastHealthGradient3
             local LastWeaponGradient1, LastWeaponGradient2
             local LastWeaponText
+            local LastFlagsText
+            local LastFlagsColor
             local function HideESP()
                 if IsHidden and plr then
                     return
@@ -854,6 +891,40 @@ do -- Initalize
                 Flag2.Visible = false;
                 LastHiddenChamsEnabled = nil
                 LastVisibleChamsEnabled = nil
+                LastFadeTransparency = nil
+                LastCornerColor = nil
+                LastCornerEnabled = nil
+                LastBoxGradientEnabled = nil
+                LastBoxFillEnabled = nil
+                LastBoxFillColor = nil
+                LastBoxFillTransparency = nil
+                LastBoxAnimationEnabled = nil
+                LastHealthbarGradientEnabled = nil
+                LastHealthbarEnabled = nil
+                LastNameColor = nil
+                LastNameEnabled = nil
+                LastNameText = nil
+                LastDistanceColor = nil
+                LastDistanceEnabled = nil
+                LastDistancePosition = nil
+                LastHealthTextValue = nil
+                LastHealthTextEnabled = nil
+                LastWeaponGradientEnabled = nil
+                LastWeaponIconColor = nil
+                LastWeaponEnabled = nil
+                LastWeaponColor = nil
+                LastFillGradient1 = nil
+                LastFillGradient2 = nil
+                LastOutlineGradient1 = nil
+                LastOutlineGradient2 = nil
+                LastHealthGradient1 = nil
+                LastHealthGradient2 = nil
+                LastHealthGradient3 = nil
+                LastWeaponGradient1 = nil
+                LastWeaponGradient2 = nil
+                LastWeaponText = nil
+                LastFlagsText = nil
+                LastFlagsColor = nil
                 if not plr then
                     ScreenGui:Destroy();
                     Connection:Disconnect();
@@ -947,20 +1018,47 @@ do -- Initalize
                     if OnScreen and Dist <= ESP.MaxDistance then
                         local w, h
 
-                        do -- Snug box bounds (project the model bounding box)
+                        do -- Snug body bounds (ignore accessories and held tools)
                             local MinX, MinY = math.huge, math.huge
                             local MaxX, MaxY = -math.huge, -math.huge
                             local Projected = false
 
                             if not CachedBoundsCFrame or BoundsAccumulator >= 0.1 then
-                                local BoundsSuccess, BoundsCFrame, BoundsSize = pcall(function()
-                                    return Character:GetBoundingBox()
+                                local BoundsSuccess, BoundsOffset, BoundsSize = pcall(function()
+                                    local Min = Vector3.new(math.huge, math.huge, math.huge)
+                                    local Max = Vector3.new(-math.huge, -math.huge, -math.huge)
+                                    local BodyPartCount = 0
+
+                                    for _, Part in ipairs(Character:GetChildren()) do
+                                        if Functions:IsProjectDeltaBodyPart(Part) then
+                                            local RelativeCFrame = HRP.CFrame:ToObjectSpace(Part.CFrame)
+                                            local Half = Part.Size / 2
+
+                                            for XIndex = -1, 1, 2 do
+                                                for YIndex = -1, 1, 2 do
+                                                    for ZIndex = -1, 1, 2 do
+                                                        local Corner = RelativeCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex))
+                                                        Min = Vector3.new(math.min(Min.X, Corner.X), math.min(Min.Y, Corner.Y), math.min(Min.Z, Corner.Z))
+                                                        Max = Vector3.new(math.max(Max.X, Corner.X), math.max(Max.Y, Corner.Y), math.max(Max.Z, Corner.Z))
+                                                    end
+                                                end
+                                            end
+
+                                            BodyPartCount = BodyPartCount + 1
+                                        end
+                                    end
+
+                                    if BodyPartCount == 0 then
+                                        return nil, nil
+                                    end
+
+                                    return CFrame.new((Min + Max) / 2), Max - Min
                                 end)
 
-                                if BoundsSuccess then
-                                    CachedBoundsCFrame = BoundsCFrame
-                                    CachedBoundsOffset = HRP.CFrame:ToObjectSpace(BoundsCFrame)
+                                if BoundsSuccess and BoundsOffset and BoundsSize then
+                                    CachedBoundsOffset = BoundsOffset
                                     CachedBoundsSize = BoundsSize
+                                    CachedBoundsCFrame = HRP.CFrame * BoundsOffset
                                 end
 
                                 BoundsAccumulator = 0
@@ -1001,8 +1099,7 @@ do -- Initalize
                                 w, h = 3 * scaleFactor, 4.5 * scaleFactor
                             end
 
-                            -- Keep the bottom edge fixed while shortening the top
-                            -- edge by 5 pixels.
+                            -- Preserve the existing visual padding.
                             w = w + 12
                             h = h + 7
                             Pos = Vector2.new(Pos.X, Pos.Y + 2.5)
@@ -1364,25 +1461,27 @@ do -- Initalize
                                 Name.Position = UDim2.new(0, Pos.X, 0, Pos.Y - h / 2 - 9)
                             end
 
-                            --[[do -- Flags
-                                Flag1.Position = UDim2.new(0, Pos.X + w / 2 + 20, 0, Pos.Y - h / 2 + 3)                                
-                                if ESP.Drawing.Flags.Enabled then
-                                    if false then
-                                        Flag1.Visible = true;
-                                        Flag1.TextColor3 = Color3.fromRGB(55, 200, 55)
-                                    else
-                                        Flag1.Visible = false;
-                                        Flag1.Text = "";
-                                    end
-                                    Flag2.Position = UDim2.new(0, Pos.X + w / 2 + 16, 0, Pos.Y - h / 2 + 14)       
-                                    if false then
-                                        Flag2.Visible = true;                      
-                                    else
-                                        Flag2.Visible = false;
-                                        Flag2.Text = "";
-                                    end
+                            do -- Flags
+                                local FlagsEnabled = ESP.Drawing.Flags.Enabled == true
+                                local FlagText = IsFriend and "FRIEND" or "ENEMY"
+                                local FlagColor = IsFriend and ESP.Options.FriendcheckRGB or Color3.fromRGB(255, 80, 80)
+
+                                Flag1.Position = UDim2.new(0, Pos.X + w / 2 + 20, 0, Pos.Y - h / 2 + 3)
+                                Flag2.Position = UDim2.new(0, Pos.X + w / 2 + 20, 0, Pos.Y - h / 2 + 17)
+
+                                if LastFlagsText ~= FlagText then
+                                    LastFlagsText = FlagText
+                                    Flag1.Text = FlagText
                                 end
-                            end]]
+
+                                if LastFlagsColor ~= FlagColor then
+                                    LastFlagsColor = FlagColor
+                                    Flag1.TextColor3 = FlagColor
+                                end
+
+                                Flag1.Visible = FlagsEnabled
+                                Flag2.Visible = false
+                            end
                             
                             do -- Distance
                                 local DistanceSettings = ESP.Drawing.Distances
