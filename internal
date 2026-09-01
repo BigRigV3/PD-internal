@@ -956,7 +956,9 @@ ExploitSection:Button({
             workspace:FindFirstChild("Mihkel"),
             workspace:FindFirstChild("Nurse"),
             workspace:FindFirstChild("Blaze"),
-            workspace:FindFirstChild("Seryozha")
+            workspace:FindFirstChild("Seryozha"),
+            workspace:FindFirstChild("Tarmo"),
+            workspace:FindFirstChild("Anna"),
         }
 
         local validTargets = {}
