@@ -12,7 +12,7 @@ local ESP = {
     Enabled = true,
     TeamCheck = false,
     MaxDistance = 200,
-    UpdateRate = 30,
+    UpdateRate = 15,
     FontSize = 11,
     FadeOut = {
         OnDistance = true,
@@ -481,7 +481,7 @@ local ProjectDeltaSizing = {
     PaddingY = 7,
     VerticalOffset = 2.5,
     StudsPerMeter = 3.5714285714,
-    BoundsRefresh = 0.1,
+    BoundsRefresh = 0.5,
 }
 
 -- Functions
@@ -1038,7 +1038,11 @@ do -- Initalize
                             local MaxX, MaxY = -math.huge, -math.huge
 
                             for _, Part in ipairs(CachedBodyParts) do
-                                if Functions:IsProjectDeltaCharacterPart(Part, Character) then
+                                if Part.Parent
+                                    and Part:IsDescendantOf(Character)
+                                    and Part.Transparency < 1
+                                    and Part.LocalTransparencyModifier < 1
+                                then
                                     local PartCFrame = Part.CFrame
                                     local Half = Part.Size / 2
 
