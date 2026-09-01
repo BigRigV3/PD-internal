@@ -3,7 +3,7 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRi
 local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib"))()
 
 local Window = Library:Window({
-    Name = 'Typeshit.cc<font color="rgb(126, 192, 255)">.lol</font> | developer | Beta',
+    Name = 'Type<font color="rgb(126, 192, 255)">shit</font><font color="rgb(126, 102, 255)">.cc</font> | developer | Beta',
     Rank = "developer"
 })
     
