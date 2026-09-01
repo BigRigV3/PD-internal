@@ -775,14 +775,59 @@ do -- Initalize
         local Updater = function()
             local Connection;
             local UpdateAccumulator = 0
+            local BoundsAccumulator = 0
+            local CachedCharacter
+            local CachedBoundsCFrame
+            local CachedBoundsOffset
+            local CachedBoundsSize
+            local UpdateInterval = 1 / math.max(ESP.UpdateRate or 30, 1)
+            local LastUpdateRate = ESP.UpdateRate or 30
+            local IsHidden = false
             local CachedTool = "none"
             local CachedWeaponImage = nil
             local NextWeaponRefresh = 0
+            local LastFadeTransparency
+            local LastCornerColor
+            local LastCornerEnabled
+            local LastBoxGradientEnabled
+            local LastBoxFillEnabled
+            local LastBoxFillColor
+            local LastBoxFillTransparency
+            local LastBoxAnimationEnabled
+            local LastHealthbarGradientEnabled
+            local LastHealthbarEnabled
+            local LastNameColor
+            local LastNameEnabled
+            local LastNameText
+            local LastDistanceColor
+            local LastDistanceEnabled
+            local LastDistancePosition
+            local LastHealthTextValue
+            local LastHealthTextEnabled
+            local LastWeaponGradientEnabled
+            local LastWeaponIconColor
+            local LastWeaponEnabled
+            local LastWeaponColor
+            local LastChamsCharacter
+            local LastChamsEnabled
+            local LastChamsMode
+            local LastChamsFillColor
+            local LastChamsOutlineColor
+            local LastChamsFillTransparency
+            local LastChamsOutlineTransparency
+            local LastHiddenChamsEnabled
+            local LastVisibleChamsEnabled
             local LastFillGradient1, LastFillGradient2
             local LastOutlineGradient1, LastOutlineGradient2
             local LastHealthGradient1, LastHealthGradient2, LastHealthGradient3
             local LastWeaponGradient1, LastWeaponGradient2
+            local LastWeaponText
             local function HideESP()
+                if IsHidden and plr then
+                    return
+                end
+
+                IsHidden = true
                 Box.Visible = false;
                 Name.Visible = false;
                 Distance.Visible = false;
@@ -807,19 +852,58 @@ do -- Initalize
                     HiddenChams.Enabled = false;
                 end
                 Flag2.Visible = false;
+                LastHiddenChamsEnabled = nil
+                LastVisibleChamsEnabled = nil
                 if not plr then
                     ScreenGui:Destroy();
                     Connection:Disconnect();
                 end
             end
+
+            local function ApplyFade(DistanceValue)
+                local MaxDistance = math.max(ESP.MaxDistance or 1, 1)
+                local FadeTransparency = math.min(0.9, math.max(0, DistanceValue / MaxDistance))
+                FadeTransparency = math.floor(FadeTransparency * 100 + 0.5) / 100
+
+                if FadeTransparency == LastFadeTransparency then
+                    return
+                end
+
+                LastFadeTransparency = FadeTransparency
+                Outline.Transparency = FadeTransparency
+                Name.TextTransparency = FadeTransparency
+                Distance.TextTransparency = FadeTransparency
+                Weapon.TextTransparency = FadeTransparency
+                Healthbar.BackgroundTransparency = FadeTransparency
+                BehindHealthbar.BackgroundTransparency = FadeTransparency
+                HealthText.TextTransparency = FadeTransparency
+                WeaponIcon.ImageTransparency = FadeTransparency
+                LeftTop.BackgroundTransparency = FadeTransparency
+                LeftSide.BackgroundTransparency = FadeTransparency
+                BottomSide.BackgroundTransparency = FadeTransparency
+                BottomDown.BackgroundTransparency = FadeTransparency
+                RightTop.BackgroundTransparency = FadeTransparency
+                RightSide.BackgroundTransparency = FadeTransparency
+                BottomRightSide.BackgroundTransparency = FadeTransparency
+                BottomRightDown.BackgroundTransparency = FadeTransparency
+                Flag1.TextTransparency = FadeTransparency
+                Flag2.TextTransparency = FadeTransparency
+
+            end
             --
             Connection = Euphoria.RunService.RenderStepped:Connect(function(DeltaTime)
                 UpdateAccumulator = UpdateAccumulator + DeltaTime
-                local UpdateInterval = 1 / math.max(ESP.UpdateRate or 30, 1)
+                local CurrentUpdateRate = math.max(ESP.UpdateRate or 30, 1)
+                if CurrentUpdateRate ~= LastUpdateRate then
+                    LastUpdateRate = CurrentUpdateRate
+                    UpdateInterval = 1 / CurrentUpdateRate
+                end
+
                 if UpdateAccumulator < UpdateInterval then
                     return
                 end
                 UpdateAccumulator = UpdateAccumulator % UpdateInterval
+                local CurrentTime = tick()
 
                 if not ESP.Enabled then
                     HideESP()
@@ -847,6 +931,16 @@ do -- Initalize
                 local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
 
                 if Character and HRP and Humanoid then
+                    if CachedCharacter ~= Character then
+                        CachedCharacter = Character
+                        CachedBoundsCFrame = nil
+                        CachedBoundsOffset = nil
+                        CachedBoundsSize = nil
+                        BoundsAccumulator = 0
+                    else
+                        BoundsAccumulator = BoundsAccumulator + UpdateInterval
+                    end
+
                     local Pos, OnScreen = Cam:WorldToScreenPoint(HRP.Position)
                     local Dist = (Cam.CFrame.Position - HRP.Position).Magnitude / 3.5714285714
                     
@@ -858,20 +952,38 @@ do -- Initalize
                             local MaxX, MaxY = -math.huge, -math.huge
                             local Projected = false
 
-                            local BoundsCFrame, BoundsSize = Character:GetBoundingBox()
-                            local Half = BoundsSize / 2
+                            if not CachedBoundsCFrame or BoundsAccumulator >= 0.1 then
+                                local BoundsSuccess, BoundsCFrame, BoundsSize = pcall(function()
+                                    return Character:GetBoundingBox()
+                                end)
 
-                            for XIndex = -1, 1, 2 do
-                                for YIndex = -1, 1, 2 do
-                                    for ZIndex = -1, 1, 2 do
-                                        local CornerPosition = Cam:WorldToScreenPoint(BoundsCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex)))
+                                if BoundsSuccess then
+                                    CachedBoundsCFrame = BoundsCFrame
+                                    CachedBoundsOffset = HRP.CFrame:ToObjectSpace(BoundsCFrame)
+                                    CachedBoundsSize = BoundsSize
+                                end
 
-                                        if CornerPosition.Z > 0 then
-                                            Projected = true
-                                            MinX = math.min(MinX, CornerPosition.X)
-                                            MinY = math.min(MinY, CornerPosition.Y)
-                                            MaxX = math.max(MaxX, CornerPosition.X)
-                                            MaxY = math.max(MaxY, CornerPosition.Y)
+                                BoundsAccumulator = 0
+                            end
+
+                            local BoundsCFrame = CachedBoundsOffset and HRP.CFrame * CachedBoundsOffset or CachedBoundsCFrame
+                            local BoundsSize = CachedBoundsSize
+
+                            if BoundsCFrame and BoundsSize then
+                                local Half = BoundsSize / 2
+
+                                for XIndex = -1, 1, 2 do
+                                    for YIndex = -1, 1, 2 do
+                                        for ZIndex = -1, 1, 2 do
+                                            local CornerPosition = Cam:WorldToScreenPoint(BoundsCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex)))
+
+                                            if CornerPosition.Z > 0 then
+                                                Projected = true
+                                                MinX = math.min(MinX, CornerPosition.X)
+                                                MinY = math.min(MinY, CornerPosition.Y)
+                                                MaxX = math.max(MaxX, CornerPosition.X)
+                                                MaxY = math.max(MaxY, CornerPosition.Y)
+                                            end
                                         end
                                     end
                                 end
@@ -896,29 +1008,12 @@ do -- Initalize
                             Pos = Vector2.new(Pos.X, Pos.Y + 2.5)
                         end
 
-                        -- Fade-out effect --
+                        -- Fade-out effect. Cache the last value so moving targets
+                        -- do not rewrite every visual property on every update.
                         if ESP.FadeOut.OnDistance then
-                            Functions:FadeOutOnDist(Box, Dist)
-                            Functions:FadeOutOnDist(Outline, Dist)
-                            Functions:FadeOutOnDist(Name, Dist)
-                            Functions:FadeOutOnDist(Distance, Dist)
-                            Functions:FadeOutOnDist(Weapon, Dist)
-                            Functions:FadeOutOnDist(Healthbar, Dist)
-                            Functions:FadeOutOnDist(BehindHealthbar, Dist)
-                            Functions:FadeOutOnDist(HealthText, Dist)
-                            Functions:FadeOutOnDist(WeaponIcon, Dist)
-                            Functions:FadeOutOnDist(LeftTop, Dist)
-                            Functions:FadeOutOnDist(LeftSide, Dist)
-                            Functions:FadeOutOnDist(BottomSide, Dist)
-                            Functions:FadeOutOnDist(BottomDown, Dist)
-                            Functions:FadeOutOnDist(RightTop, Dist)
-                            Functions:FadeOutOnDist(RightSide, Dist)
-                            Functions:FadeOutOnDist(BottomRightSide, Dist)
-                            Functions:FadeOutOnDist(BottomRightDown, Dist)
-                            Functions:FadeOutOnDist(VisibleChams, Dist)
-                            Functions:FadeOutOnDist(HiddenChams, Dist)
-                            Functions:FadeOutOnDist(Flag1, Dist)
-                            Functions:FadeOutOnDist(Flag2, Dist)
+                            ApplyFade(Dist)
+                        else
+                            LastFadeTransparency = nil
                         end
 
                         -- Teamcheck
@@ -929,57 +1024,111 @@ do -- Initalize
                             and Humanoid
 
                         if IsValidTarget then
+                            IsHidden = false
 
                             do -- Chams
-                                local ChamsMode = ESP.Drawing.Chams.Mode or (ESP.Drawing.Chams.VisibleCheck and "VisibleOnly" or "VisibleAndHidden")
-                                local function ClampTransparency(Value)
-                                    return math.max(0, math.min(1, Value))
-                                end
-                                local FillTransparency = ClampTransparency((ESP.Drawing.Chams.Fill_Transparency or 100) * 0.01)
-                                local OutlineTransparency = ClampTransparency((ESP.Drawing.Chams.Outline_Transparency or 100) * 0.01)
+                                local Chams = ESP.Drawing.Chams
+                                local ChamsMode = Chams.Mode or (Chams.VisibleCheck and "VisibleOnly" or "VisibleAndHidden")
+                                local FillTransparency = math.clamp((Chams.Fill_Transparency or 100) * 0.01, 0, 1)
+                                local OutlineTransparency = math.clamp((Chams.Outline_Transparency or 100) * 0.01, 0, 1)
 
-                                if ESP.Drawing.Chams.Thermal then
-                                    local breathe_effect = 0.35 + ((math.sin(tick() * 2) + 1) * 0.325)
-                                    FillTransparency = ClampTransparency(FillTransparency * breathe_effect)
-                                    OutlineTransparency = ClampTransparency(OutlineTransparency * breathe_effect)
+                                if Chams.Thermal then
+                                    -- Thermal motion does not need to update at the
+                                    -- full ESP rate; 10 Hz keeps it smooth while
+                                    -- avoiding repeated Highlight property writes.
+                                    local ThermalTime = math.floor(CurrentTime * 10) / 10
+                                    local breathe_effect = 0.35 + ((math.sin(ThermalTime * 2) + 1) * 0.325)
+                                    FillTransparency = math.clamp(FillTransparency * breathe_effect, 0, 1)
+                                    OutlineTransparency = math.clamp(OutlineTransparency * breathe_effect, 0, 1)
                                 end
+
+                                local ChamsEnabled = Chams.Enabled == true
+                                local HiddenChamsEnabled = ChamsEnabled and ChamsMode == "VisibleAndHidden"
+                                local VisibleChamsEnabled = ChamsEnabled
+                                local ChamsFillColor = Chams.VisibleFillRGB or Chams.FillRGB
+                                local ChamsOutlineColor = Chams.VisibleOutlineRGB or Chams.OutlineRGB
+                                local HiddenChamsFillColor = Chams.HiddenFillRGB or Chams.FillRGB
+                                local HiddenChamsOutlineColor = Chams.HiddenOutlineRGB or Chams.OutlineRGB
+                                local ChamsSettingsChanged = LastChamsCharacter ~= Character
+                                    or LastChamsEnabled ~= ChamsEnabled
+                                    or LastChamsMode ~= ChamsMode
+                                    or LastChamsFillColor ~= ChamsFillColor
+                                    or LastChamsOutlineColor ~= ChamsOutlineColor
+                                    or LastChamsFillTransparency ~= FillTransparency
+                                    or LastChamsOutlineTransparency ~= OutlineTransparency
 
                                 if HiddenChams then
-                                    pcall(function()
-                                        HiddenChams.Adornee = plr.Character
-                                        HiddenChams.Enabled = ESP.Drawing.Chams.Enabled and ChamsMode == "VisibleAndHidden"
-                                        HiddenChams.FillColor = ESP.Drawing.Chams.HiddenFillRGB or ESP.Drawing.Chams.FillRGB
-                                        HiddenChams.OutlineColor = ESP.Drawing.Chams.HiddenOutlineRGB or ESP.Drawing.Chams.OutlineRGB
-                                        HiddenChams.FillTransparency = FillTransparency
-                                        HiddenChams.OutlineTransparency = OutlineTransparency
-                                        HiddenChams.DepthMode = "AlwaysOnTop"
-                                    end)
+                                    if ChamsSettingsChanged then
+                                        pcall(function()
+                                            HiddenChams.Adornee = Character
+                                            HiddenChams.FillColor = HiddenChamsFillColor
+                                            HiddenChams.OutlineColor = HiddenChamsOutlineColor
+                                            HiddenChams.FillTransparency = FillTransparency
+                                            HiddenChams.OutlineTransparency = OutlineTransparency
+                                            HiddenChams.DepthMode = "AlwaysOnTop"
+                                        end)
+                                    end
+
+                                    if LastHiddenChamsEnabled ~= HiddenChamsEnabled then
+                                        LastHiddenChamsEnabled = HiddenChamsEnabled
+                                        HiddenChams.Enabled = HiddenChamsEnabled
+                                    end
                                 end
 
                                 if VisibleChams then
-                                    pcall(function()
-                                        VisibleChams.Adornee = plr.Character
-                                        VisibleChams.Enabled = ESP.Drawing.Chams.Enabled
-                                        VisibleChams.FillColor = ESP.Drawing.Chams.VisibleFillRGB or ESP.Drawing.Chams.FillRGB
-                                        VisibleChams.OutlineColor = ESP.Drawing.Chams.VisibleOutlineRGB or ESP.Drawing.Chams.OutlineRGB
-                                        VisibleChams.FillTransparency = FillTransparency
-                                        VisibleChams.OutlineTransparency = OutlineTransparency
-                                        VisibleChams.DepthMode = "Occluded"
-                                    end)
+                                    if ChamsSettingsChanged then
+                                        pcall(function()
+                                            VisibleChams.Adornee = Character
+                                            VisibleChams.FillColor = ChamsFillColor
+                                            VisibleChams.OutlineColor = ChamsOutlineColor
+                                            VisibleChams.FillTransparency = FillTransparency
+                                            VisibleChams.OutlineTransparency = OutlineTransparency
+                                            VisibleChams.DepthMode = "Occluded"
+                                        end)
+                                    end
+
+                                    if LastVisibleChamsEnabled ~= VisibleChamsEnabled then
+                                        LastVisibleChamsEnabled = VisibleChamsEnabled
+                                        VisibleChams.Enabled = VisibleChamsEnabled
+                                    end
                                 end
+
+                                LastChamsCharacter = Character
+                                LastChamsEnabled = ChamsEnabled
+                                LastChamsMode = ChamsMode
+                                LastChamsFillColor = ChamsFillColor
+                                LastChamsOutlineColor = ChamsOutlineColor
+                                LastChamsFillTransparency = FillTransparency
+                                LastChamsOutlineTransparency = OutlineTransparency
                             end;
 
                             do -- Corner Boxes
-                                LeftTop.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                LeftSide.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                BottomSide.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                BottomDown.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                RightTop.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                RightSide.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                BottomRightSide.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                BottomRightDown.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
+                                local CornerColor = ESP.Drawing.Boxes.Corner.RGB
+                                if LastCornerColor ~= CornerColor then
+                                    LastCornerColor = CornerColor
+                                    LeftTop.BackgroundColor3 = CornerColor
+                                    LeftSide.BackgroundColor3 = CornerColor
+                                    BottomSide.BackgroundColor3 = CornerColor
+                                    BottomDown.BackgroundColor3 = CornerColor
+                                    RightTop.BackgroundColor3 = CornerColor
+                                    RightSide.BackgroundColor3 = CornerColor
+                                    BottomRightSide.BackgroundColor3 = CornerColor
+                                    BottomRightDown.BackgroundColor3 = CornerColor
+                                end
 
-                                LeftTop.Visible = ESP.Drawing.Boxes.Corner.Enabled
+                                local CornerEnabled = ESP.Drawing.Boxes.Corner.Enabled
+                                if LastCornerEnabled ~= CornerEnabled then
+                                    LastCornerEnabled = CornerEnabled
+                                    LeftTop.Visible = CornerEnabled
+                                    LeftSide.Visible = CornerEnabled
+                                    BottomSide.Visible = CornerEnabled
+                                    BottomDown.Visible = CornerEnabled
+                                    RightTop.Visible = CornerEnabled
+                                    RightSide.Visible = CornerEnabled
+                                    BottomRightSide.Visible = CornerEnabled
+                                    BottomRightDown.Visible = CornerEnabled
+                                end
+
                                 LeftTop.Position = UDim2.new(0, Pos.X - w / 2, 0, Pos.Y - h / 2)
                                 LeftTop.Size = UDim2.new(0, w / 5, 0, 1)
                                 
@@ -1021,26 +1170,68 @@ do -- Initalize
                             do -- Boxes
                                 Box.Position = UDim2.new(0, Pos.X - w / 2, 0, Pos.Y - h / 2)
                                 Box.Size = UDim2.new(0, w, 0, h)
-                                ESP.Drawing.Boxes.Full.Enabled = true
                                 Box.Visible = true
-                                Box.BorderColor3 = ESP.Drawing.Boxes.Full.RGB
+                                local Boxes = ESP.Drawing.Boxes
+                                local BoxGradientEnabled = Boxes.Gradient == true
+                                local BoxFillEnabled = Boxes.Filled.Enabled == true
+                                local BoxAnimationEnabled = Boxes.Animate == true
+                                local BoxFillColor = Boxes.Filled.RGB
+                                local BoxFillTransparency = Boxes.Filled.Transparency
 
-                                Gradient1.Enabled = ESP.Drawing.Boxes.Filled.Enabled and ESP.Drawing.Boxes.GradientFill
-                                if LastFillGradient1 ~= ESP.Drawing.Boxes.GradientFillRGB1 or LastFillGradient2 ~= ESP.Drawing.Boxes.GradientFillRGB2 then
-                                    LastFillGradient1 = ESP.Drawing.Boxes.GradientFillRGB1
-                                    LastFillGradient2 = ESP.Drawing.Boxes.GradientFillRGB2
+                                if LastBoxGradientEnabled ~= BoxGradientEnabled then
+                                    LastBoxGradientEnabled = BoxGradientEnabled
+                                    Outline.Enabled = BoxGradientEnabled
+                                    Gradient2.Enabled = BoxGradientEnabled
+                                end
+
+                                if LastBoxFillEnabled ~= BoxFillEnabled then
+                                    LastBoxFillEnabled = BoxFillEnabled
+                                    Gradient1.Enabled = BoxFillEnabled and Boxes.GradientFill == true
+                                elseif BoxFillEnabled then
+                                    local GradientFillEnabled = Boxes.GradientFill == true
+                                    if Gradient1.Enabled ~= GradientFillEnabled then
+                                        Gradient1.Enabled = GradientFillEnabled
+                                    end
+                                end
+
+                                if BoxFillEnabled and LastBoxFillColor ~= BoxFillColor then
+                                    LastBoxFillColor = BoxFillColor
+                                    Box.BackgroundColor3 = BoxFillColor
+                                elseif not BoxFillEnabled then
+                                    LastBoxFillColor = nil
+                                end
+
+                                if BoxFillEnabled and LastBoxFillTransparency ~= BoxFillTransparency then
+                                    LastBoxFillTransparency = BoxFillTransparency
+                                    Box.BackgroundTransparency = BoxFillTransparency
+                                elseif not BoxFillEnabled then
+                                    LastBoxFillTransparency = nil
+                                end
+
+                                if LastBoxAnimationEnabled ~= BoxAnimationEnabled then
+                                    LastBoxAnimationEnabled = BoxAnimationEnabled
+                                    if not BoxAnimationEnabled then
+                                        Gradient1.Rotation = -45
+                                        Gradient2.Rotation = -45
+                                    end
+                                end
+
+                                if Box.BorderColor3 ~= Boxes.Full.RGB then
+                                    Box.BorderColor3 = Boxes.Full.RGB
+                                end
+
+                                if LastFillGradient1 ~= Boxes.GradientFillRGB1 or LastFillGradient2 ~= Boxes.GradientFillRGB2 then
+                                    LastFillGradient1 = Boxes.GradientFillRGB1
+                                    LastFillGradient2 = Boxes.GradientFillRGB2
                                     Gradient1.Color = ColorSequence.new{
                                         ColorSequenceKeypoint.new(0, LastFillGradient1),
                                         ColorSequenceKeypoint.new(1, LastFillGradient2)
                                     }
                                 end
 
-                                Outline.Enabled = ESP.Drawing.Boxes.Gradient
-                                Outline.Color = ESP.Drawing.Boxes.Full.RGB
-                                Gradient2.Enabled = ESP.Drawing.Boxes.Gradient
-                                if LastOutlineGradient1 ~= ESP.Drawing.Boxes.GradientRGB1 or LastOutlineGradient2 ~= ESP.Drawing.Boxes.GradientRGB2 then
-                                    LastOutlineGradient1 = ESP.Drawing.Boxes.GradientRGB1
-                                    LastOutlineGradient2 = ESP.Drawing.Boxes.GradientRGB2
+                                if LastOutlineGradient1 ~= Boxes.GradientRGB1 or LastOutlineGradient2 ~= Boxes.GradientRGB2 then
+                                    LastOutlineGradient1 = Boxes.GradientRGB1
+                                    LastOutlineGradient2 = Boxes.GradientRGB2
                                     Gradient2.Color = ColorSequence.new{
                                         ColorSequenceKeypoint.new(0, LastOutlineGradient1),
                                         ColorSequenceKeypoint.new(1, LastOutlineGradient2)
@@ -1048,34 +1239,33 @@ do -- Initalize
                                 end
 
                                 -- Fill
-                                if ESP.Drawing.Boxes.Filled.Enabled then
-                                    Box.BackgroundColor3 = ESP.Drawing.Boxes.Filled.RGB
-                                    Box.BackgroundTransparency = ESP.Drawing.Boxes.Filled.Transparency
-                                    Box.BorderSizePixel = 1
-                                else
+                                if not BoxFillEnabled then
                                     Box.BackgroundTransparency = 1
-                                    Box.BorderSizePixel = 1
                                 end
+                                Box.BorderSizePixel = 1
                                 -- Animation
-                                RotationAngle = RotationAngle + (tick() - Tick) * ESP.Drawing.Boxes.RotationSpeed * math.cos(math.pi / 4 * tick() - math.pi / 2)
-                                if ESP.Drawing.Boxes.Animate then
+                                if BoxAnimationEnabled then
+                                    RotationAngle = RotationAngle + (CurrentTime - Tick) * Boxes.RotationSpeed * math.cos(math.pi / 4 * CurrentTime - math.pi / 2)
                                     Gradient1.Rotation = RotationAngle
                                     Gradient2.Rotation = RotationAngle
-                                else
-                                    Gradient1.Rotation = -45
-                                    Gradient2.Rotation = -45
                                 end
-                                Tick = tick()
+                                Tick = CurrentTime
                             end
 
                             -- Healthbar
                             do  
-                                local health = Humanoid.Health / Humanoid.MaxHealth;
-                                HealthbarGradient.Enabled = ESP.Drawing.Healthbar.Gradient
-                                if LastHealthGradient1 ~= ESP.Drawing.Healthbar.GradientRGB1 or LastHealthGradient2 ~= ESP.Drawing.Healthbar.GradientRGB2 or LastHealthGradient3 ~= ESP.Drawing.Healthbar.GradientRGB3 then
-                                    LastHealthGradient1 = ESP.Drawing.Healthbar.GradientRGB1
-                                    LastHealthGradient2 = ESP.Drawing.Healthbar.GradientRGB2
-                                    LastHealthGradient3 = ESP.Drawing.Healthbar.GradientRGB3
+                                local HealthbarSettings = ESP.Drawing.Healthbar
+                                local health = Humanoid.Health / math.max(Humanoid.MaxHealth, 1)
+                                local HealthbarGradientEnabled = HealthbarSettings.Gradient == true
+                                if LastHealthbarGradientEnabled ~= HealthbarGradientEnabled then
+                                    LastHealthbarGradientEnabled = HealthbarGradientEnabled
+                                    HealthbarGradient.Enabled = HealthbarGradientEnabled
+                                end
+
+                                if LastHealthGradient1 ~= HealthbarSettings.GradientRGB1 or LastHealthGradient2 ~= HealthbarSettings.GradientRGB2 or LastHealthGradient3 ~= HealthbarSettings.GradientRGB3 then
+                                    LastHealthGradient1 = HealthbarSettings.GradientRGB1
+                                    LastHealthGradient2 = HealthbarSettings.GradientRGB2
+                                    LastHealthGradient3 = HealthbarSettings.GradientRGB3
                                     HealthbarGradient.Color = ColorSequence.new{
                                         ColorSequenceKeypoint.new(0, LastHealthGradient1),
                                         ColorSequenceKeypoint.new(0.5, LastHealthGradient2),
@@ -1083,37 +1273,93 @@ do -- Initalize
                                     }
                                 end
 
-                                Healthbar.Visible = ESP.Drawing.Healthbar.Enabled;
-                                Healthbar.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2 + h * (1 - health))  
-                                Healthbar.Size = UDim2.new(0, ESP.Drawing.Healthbar.Width, 0, h * health)  
+                                local HealthbarEnabled = HealthbarSettings.Enabled == true
+                                if LastHealthbarEnabled ~= HealthbarEnabled then
+                                    LastHealthbarEnabled = HealthbarEnabled
+                                    Healthbar.Visible = HealthbarEnabled
+                                    BehindHealthbar.Visible = HealthbarEnabled
+                                end
+
+                                Healthbar.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2 + h * (1 - health))
+                                Healthbar.Size = UDim2.new(0, HealthbarSettings.Width, 0, h * health)
                                 --
-                                BehindHealthbar.Visible = ESP.Drawing.Healthbar.Enabled;
-                                BehindHealthbar.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2)  
-                                BehindHealthbar.Size = UDim2.new(0, ESP.Drawing.Healthbar.Width, 0, h)
+                                BehindHealthbar.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2)
+                                BehindHealthbar.Size = UDim2.new(0, HealthbarSettings.Width, 0, h)
                                 -- Health Text
                                 do
-                                    if ESP.Drawing.Healthbar.HealthText then
-                                        local healthPercentage = math.floor(Humanoid.Health / Humanoid.MaxHealth * 100)
+                                    local HealthTextEnabled = HealthbarSettings.HealthText == true
+                                    if LastHealthTextEnabled ~= HealthTextEnabled then
+                                        LastHealthTextEnabled = HealthTextEnabled
+                                        if not HealthTextEnabled then
+                                            HealthText.Visible = false
+                                        end
+                                    end
+
+                                    if HealthTextEnabled then
+                                        local healthPercentage = math.floor(health * 100)
                                         HealthText.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2 + h * (1 - healthPercentage / 100) + 3)
-                                        HealthText.Text = tostring(healthPercentage)
-                                        HealthText.Visible = Humanoid.Health < Humanoid.MaxHealth
-                                        if ESP.Drawing.Healthbar.Lerp then
+                                        if LastHealthTextValue ~= healthPercentage then
+                                            LastHealthTextValue = healthPercentage
+                                            HealthText.Text = tostring(healthPercentage)
+                                        end
+
+                                        local HealthTextVisible = Humanoid.Health < Humanoid.MaxHealth
+                                        if HealthText.Visible ~= HealthTextVisible then
+                                            HealthText.Visible = HealthTextVisible
+                                        end
+
+                                        local HealthTextColor
+                                        if HealthbarSettings.Lerp then
                                             local color = health >= 0.75 and Color3.fromRGB(0, 255, 0) or health >= 0.5 and Color3.fromRGB(255, 255, 0) or health >= 0.25 and Color3.fromRGB(255, 170, 0) or Color3.fromRGB(255, 0, 0)
-                                            HealthText.TextColor3 = color
+                                            HealthTextColor = color
                                         else
-                                            HealthText.TextColor3 = ESP.Drawing.Healthbar.HealthTextRGB
+                                            HealthTextColor = HealthbarSettings.HealthTextRGB
+                                        end
+
+                                        if HealthText.TextColor3 ~= HealthTextColor then
+                                            HealthText.TextColor3 = HealthTextColor
                                         end
                                     end                        
                                 end
                             end
 
                             do -- Names
-                                Name.Visible = ESP.Drawing.Names.Enabled
-                                Name.TextColor3 = ESP.Drawing.Names.RGB
+                                local NameSettings = ESP.Drawing.Names
+                                local NameEnabled = NameSettings.Enabled == true
+                                if LastNameEnabled ~= NameEnabled then
+                                    LastNameEnabled = NameEnabled
+                                    Name.Visible = NameEnabled
+                                end
+
+                                if LastNameColor ~= NameSettings.RGB then
+                                    LastNameColor = NameSettings.RGB
+                                    Name.TextColor3 = NameSettings.RGB
+                                end
+
+                                local NameText
                                 if ESP.Options.Friendcheck and IsFriend then
-                                    Name.Text = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s', ESP.Options.FriendcheckRGB.R * 255, ESP.Options.FriendcheckRGB.G * 255, ESP.Options.FriendcheckRGB.B * 255, plr.Name)
+                                    local FriendColor = ESP.Options.FriendcheckRGB
+                                    NameText = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s', FriendColor.R * 255, FriendColor.G * 255, FriendColor.B * 255, plr.Name)
                                 else
-                                    Name.Text = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s', 255, 0, 0, plr.Name)
+                                    NameText = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s', 255, 0, 0, plr.Name)
+                                end
+
+                                local DistanceSettings = ESP.Drawing.Distances
+                                local DistanceEnabled = DistanceSettings.Enabled == true
+                                local DistancePosition = DistanceSettings.Position
+                                local DistanceValue = math.floor(Dist)
+
+                                if DistanceEnabled and DistancePosition == "Text" then
+                                    if ESP.Options.Friendcheck and IsFriend then
+                                        local FriendColor = ESP.Options.FriendcheckRGB
+                                        NameText = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s [%d]', FriendColor.R * 255, FriendColor.G * 255, FriendColor.B * 255, plr.Name, DistanceValue)
+                                    else
+                                        NameText = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s [%d]', 255, 0, 0, plr.Name, DistanceValue)
+                                    end
+                                end
+
+                                if Name.Text ~= NameText then
+                                    Name.Text = NameText
                                 end
                                 Name.Position = UDim2.new(0, Pos.X, 0, Pos.Y - h / 2 - 9)
                             end
@@ -1139,30 +1385,41 @@ do -- Initalize
                             end]]
                             
                             do -- Distance
-                                if ESP.Drawing.Distances.Enabled then
-                                    if ESP.Drawing.Distances.Position == "Bottom" then
+                                local DistanceSettings = ESP.Drawing.Distances
+                                local DistanceEnabled = DistanceSettings.Enabled == true
+                                local DistancePosition = DistanceSettings.Position
+                                local IsBottomDistance = DistanceEnabled and DistancePosition == "Bottom"
+
+                                if LastDistanceEnabled ~= IsBottomDistance or LastDistancePosition ~= DistancePosition then
+                                    LastDistanceEnabled = IsBottomDistance
+                                    LastDistancePosition = DistancePosition
+                                    Distance.Visible = IsBottomDistance
+                                end
+
+                                if DistanceEnabled then
+                                    if DistancePosition == "Bottom" then
                                         Weapon.Position = UDim2.new(0, Pos.X, 0, Pos.Y + h / 2 + 18)
                                         WeaponIcon.Position = UDim2.new(0, Pos.X - 21, 0, Pos.Y + h / 2 + 15);
                                         Distance.Position = UDim2.new(0, Pos.X, 0, Pos.Y + h / 2 + 7)
-                                        Distance.TextColor3 = ESP.Drawing.Distances.RGB
-                                        Distance.Text = string.format("%d meters", math.floor(Dist))
-                                        Distance.Visible = true
-                                    elseif ESP.Drawing.Distances.Position == "Text" then
+                                        if LastDistanceColor ~= DistanceSettings.RGB then
+                                            LastDistanceColor = DistanceSettings.RGB
+                                            Distance.TextColor3 = DistanceSettings.RGB
+                                        end
+
+                                        local DistanceText = string.format("%d meters", math.floor(Dist))
+                                        if Distance.Text ~= DistanceText then
+                                            Distance.Text = DistanceText
+                                        end
+                                    elseif DistancePosition == "Text" then
                                         Weapon.Position = UDim2.new(0, Pos.X, 0, Pos.Y + h / 2 + 8)
                                         WeaponIcon.Position = UDim2.new(0, Pos.X - 21, 0, Pos.Y + h / 2 + 5);
-                                        Distance.Visible = false
-                                        if ESP.Options.Friendcheck and IsFriend then
-                                            Name.Text = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s [%d]', ESP.Options.FriendcheckRGB.R * 255, ESP.Options.FriendcheckRGB.G * 255, ESP.Options.FriendcheckRGB.B * 255, plr.Name, math.floor(Dist))
-                                        else
-                                            Name.Text = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s [%d]', 255, 0, 0, plr.Name, math.floor(Dist))
-                                        end
-                                        Name.Visible = ESP.Drawing.Names.Enabled
                                     end
                                 end
                             end
 
                             do -- Weapons
-                                local Now = tick()
+                                local Weapons = ESP.Drawing.Weapons
+                                local Now = CurrentTime
                                 if Now >= NextWeaponRefresh then
                                     NextWeaponRefresh = Now + 0.25
 
@@ -1171,7 +1428,7 @@ do -- Initalize
                                     end)
                                     CachedTool = ToolSuccess and tostring(CurrentTool or "none") or "none"
 
-                                    if ESP.Drawing.Weapons.Icons then
+                                    if Weapons.Icons then
                                         local ImageSuccess, WeaponImage = pcall(function()
                                             return Functions:GetPlayerToolImg(plr)
                                         end)
@@ -1181,26 +1438,52 @@ do -- Initalize
                                     end
                                 end
 
-                                Gradient3.Enabled = ESP.Drawing.Weapons.Gradient
-                                if LastWeaponGradient1 ~= ESP.Drawing.Weapons.GradientRGB1 or LastWeaponGradient2 ~= ESP.Drawing.Weapons.GradientRGB2 then
-                                    LastWeaponGradient1 = ESP.Drawing.Weapons.GradientRGB1
-                                    LastWeaponGradient2 = ESP.Drawing.Weapons.GradientRGB2
+                                local WeaponGradientEnabled = Weapons.Gradient == true
+                                if LastWeaponGradientEnabled ~= WeaponGradientEnabled then
+                                    LastWeaponGradientEnabled = WeaponGradientEnabled
+                                    Gradient3.Enabled = WeaponGradientEnabled
+                                end
+
+                                if LastWeaponGradient1 ~= Weapons.GradientRGB1 or LastWeaponGradient2 ~= Weapons.GradientRGB2 then
+                                    LastWeaponGradient1 = Weapons.GradientRGB1
+                                    LastWeaponGradient2 = Weapons.GradientRGB2
                                     Gradient3.Color = ColorSequence.new{
                                         ColorSequenceKeypoint.new(0, LastWeaponGradient1),
                                         ColorSequenceKeypoint.new(1, LastWeaponGradient2)
                                     }
                                 end
 
-                                Weapon.Text = ESP.Drawing.Weapons.Enabled and string.format('[<font color="rgb(%d, %d, %d)">%s</font>]', ESP.Drawing.Weapons.WeaponTextRGB.R * 255, ESP.Drawing.Weapons.WeaponTextRGB.G * 255, ESP.Drawing.Weapons.WeaponTextRGB.B * 255, CachedTool) or ""
-                                Weapon.Visible = ESP.Drawing.Weapons.Enabled
+                                local WeaponEnabled = Weapons.Enabled == true
+                                local WeaponStateChanged = LastWeaponEnabled ~= WeaponEnabled
+                                if WeaponStateChanged then
+                                    LastWeaponEnabled = WeaponEnabled
+                                    Weapon.Visible = WeaponEnabled
+                                end
+
+                                if LastWeaponText ~= CachedTool or LastWeaponColor ~= Weapons.WeaponTextRGB or WeaponStateChanged then
+                                    LastWeaponText = CachedTool
+                                    LastWeaponColor = Weapons.WeaponTextRGB
+                                    Weapon.Text = WeaponEnabled and string.format('[<font color="rgb(%d, %d, %d)">%s</font>]', Weapons.WeaponTextRGB.R * 255, Weapons.WeaponTextRGB.G * 255, Weapons.WeaponTextRGB.B * 255, CachedTool) or ""
+                                end
                                 
                                 do -- Weapon icons
-                                    WeaponIcon.ImageColor3 = ESP.Drawing.Weapons.RGB
+                                    if LastWeaponIconColor ~= Weapons.RGB then
+                                        LastWeaponIconColor = Weapons.RGB
+                                        WeaponIcon.ImageColor3 = Weapons.RGB
+                                    end
+
                                     if CachedWeaponImage then
-                                        WeaponIcon.Visible = ESP.Drawing.Weapons.Icons
-                                        WeaponIcon.Image = CachedWeaponImage
+                                        local IconVisible = Weapons.Icons == true
+                                        if WeaponIcon.Visible ~= IconVisible then
+                                            WeaponIcon.Visible = IconVisible
+                                        end
+                                        if WeaponIcon.Image ~= CachedWeaponImage then
+                                            WeaponIcon.Image = CachedWeaponImage
+                                        end
                                     else
-                                        WeaponIcon.Visible = false
+                                        if WeaponIcon.Visible then
+                                            WeaponIcon.Visible = false
+                                        end
                                     end
                                 end
                             end                            
@@ -1991,6 +2274,15 @@ do -- Initalize
 
     local CreatePlayerESP = function(plr)
         coroutine.wrap(DupeCheck)(plr) -- Dupecheck
+        local IsFriend = false
+        if ESP.Options.Friendcheck then
+            task.spawn(function()
+                local Success, Result = pcall(function()
+                    return lplayer:IsFriendsWith(plr.UserId)
+                end)
+                IsFriend = Success and Result or false
+            end)
+        end
         local Name = Functions:Create("TextLabel", {Parent = ScreenGui, Position = UDim2.new(0.5, 0, 0, -11), Size = UDim2.new(0, 100, 0, 20), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.Code, TextSize = ESP.FontSize, TextStrokeTransparency = 0, TextStrokeColor3 = Color3.fromRGB(0, 0, 0), RichText = true})
         local Distance = Functions:Create("TextLabel", {Parent = ScreenGui, Position = UDim2.new(0.5, 0, 0, 11), Size = UDim2.new(0, 100, 0, 20), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.Code, TextSize = ESP.FontSize, TextStrokeTransparency = 0, TextStrokeColor3 = Color3.fromRGB(0, 0, 0), RichText = true})
         local Weapon = Functions:Create("TextLabel", {Parent = ScreenGui, Position = UDim2.new(0.5, 0, 0, 31), Size = UDim2.new(0, 100, 0, 20), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1, TextColor3 = Color3.fromRGB(255, 255, 255), Font = Enum.Font.Code, TextSize = ESP.FontSize, TextStrokeTransparency = 0, TextStrokeColor3 = Color3.fromRGB(0, 0, 0), RichText = true})
@@ -2027,7 +2319,58 @@ do -- Initalize
         --
         local Updater = function()
             local Connection;
+            local UpdateAccumulator = 0
+            local UpdateInterval = 1 / 30
+            local BoundsAccumulator = 0
+            local CachedCharacter
+            local CachedBoundsWidth
+            local CachedBoundsHeight
+            local CachedBoundsOffsetX
+            local CachedBoundsOffsetY
+            local IsHidden = false
+            local LastFadeTransparency
+            local LastChamsCharacter
+            local LastChamsEnabled
+            local LastChamsMode
+            local LastChamsFillColor
+            local LastChamsOutlineColor
+            local LastChamsFillTransparency
+            local LastChamsOutlineTransparency
+            local LastHiddenChamsEnabled
+            local LastVisibleChamsEnabled
+            local LastCornerColor
+            local LastCornerEnabled
+            local LastBoxGradientEnabled
+            local LastBoxFillEnabled
+            local LastBoxFillColor
+            local LastBoxFillTransparency
+            local LastBoxAnimationEnabled
+            local LastFillGradient1, LastFillGradient2
+            local LastOutlineGradient1, LastOutlineGradient2
+            local CachedTool = "none"
+            local CachedWeaponImage
+            local NextWeaponRefresh = 0
+            local LastHealthGradient1, LastHealthGradient2, LastHealthGradient3
+            local LastHealthbarGradientEnabled
+            local LastHealthbarEnabled
+            local LastHealthTextValue
+            local LastHealthTextEnabled
+            local LastNameText
+            local LastNameColor
+            local LastNameEnabled
+            local LastWeaponGradientEnabled
+            local LastWeaponGradient1, LastWeaponGradient2
+            local LastWeaponIconColor
+            local LastWeaponEnabled
+            local LastWeaponColor
+            local LastWeaponText
+
             local function HideESP()
+                if IsHidden and plr then
+                    return
+                end
+
+                IsHidden = true
                 Box.Visible = false;
                 Name.Visible = false;
                 Distance.Visible = false;
@@ -2052,13 +2395,52 @@ do -- Initalize
                     HiddenChams.Enabled = false;
                 end
                 Flag2.Visible = false;
+                LastHiddenChamsEnabled = nil
+                LastVisibleChamsEnabled = nil
                 if not plr then
                     ScreenGui:Destroy();
                     Connection:Disconnect();
                 end
             end
+
+            local function ApplyFade(DistanceValue)
+                local MaxDistance = math.max(ESP.MaxDistance or 1, 1)
+                local FadeTransparency = math.min(0.9, math.max(0, DistanceValue / MaxDistance))
+                FadeTransparency = math.floor(FadeTransparency * 100 + 0.5) / 100
+
+                if FadeTransparency == LastFadeTransparency then
+                    return
+                end
+
+                LastFadeTransparency = FadeTransparency
+                Outline.Transparency = FadeTransparency
+                Name.TextTransparency = FadeTransparency
+                Distance.TextTransparency = FadeTransparency
+                Weapon.TextTransparency = FadeTransparency
+                Healthbar.BackgroundTransparency = FadeTransparency
+                BehindHealthbar.BackgroundTransparency = FadeTransparency
+                HealthText.TextTransparency = FadeTransparency
+                WeaponIcon.ImageTransparency = FadeTransparency
+                LeftTop.BackgroundTransparency = FadeTransparency
+                LeftSide.BackgroundTransparency = FadeTransparency
+                BottomSide.BackgroundTransparency = FadeTransparency
+                BottomDown.BackgroundTransparency = FadeTransparency
+                RightTop.BackgroundTransparency = FadeTransparency
+                RightSide.BackgroundTransparency = FadeTransparency
+                BottomRightSide.BackgroundTransparency = FadeTransparency
+                BottomRightDown.BackgroundTransparency = FadeTransparency
+                Flag1.TextTransparency = FadeTransparency
+                Flag2.TextTransparency = FadeTransparency
+            end
             --
-            Connection = Euphoria.RunService.RenderStepped:Connect(function()
+            Connection = Euphoria.RunService.RenderStepped:Connect(function(DeltaTime)
+                UpdateAccumulator = UpdateAccumulator + DeltaTime
+                if UpdateAccumulator < UpdateInterval then
+                    return
+                end
+                UpdateAccumulator = UpdateAccumulator % UpdateInterval
+                local CurrentTime = tick()
+
                 if not ESP.Enabled then
                     HideESP()
                     return
@@ -2080,46 +2462,75 @@ do -- Initalize
                     end         
                 end]]
                 --
-                if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                    local HRP = plr.Character.HumanoidRootPart
-                    local Humanoid = plr.Character:WaitForChild("Humanoid");
+                local Character = plr.Character
+                local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
+                local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+
+                if Character and HRP and Humanoid then
                     local Pos, OnScreen = Cam:WorldToScreenPoint(HRP.Position)
                     local Dist = (Cam.CFrame.Position - HRP.Position).Magnitude / 3.5714285714
                     
                     if OnScreen and Dist <= ESP.MaxDistance then
                         local w, h
 
-                        do -- Snug box bounds (project every visible body part to screen space)
+                        do -- Snug box bounds (cached projection of visible body parts)
                             local MinX, MinY = math.huge, math.huge
                             local MaxX, MaxY = -math.huge, -math.huge
                             local Projected = false
 
-                            for _, Part in pairs(plr.Character:GetChildren()) do
-                                if Part:IsA("BasePart") and Part.Transparency < 1 then
-                                    local PartCFrame = Part.CFrame
-                                    local Half = Part.Size / 2
+                            if CachedCharacter ~= Character then
+                                CachedCharacter = Character
+                                CachedBoundsWidth = nil
+                                CachedBoundsHeight = nil
+                                CachedBoundsOffsetX = nil
+                                CachedBoundsOffsetY = nil
+                                BoundsAccumulator = 0
+                            else
+                                BoundsAccumulator = BoundsAccumulator + UpdateInterval
+                            end
 
-                                    for XIndex = -1, 1, 2 do
-                                        for YIndex = -1, 1, 2 do
-                                            for ZIndex = -1, 1, 2 do
-                                                local CornerPosition, CornerOnScreen = Cam:WorldToScreenPoint(PartCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex)))
+                            if not CachedBoundsWidth or BoundsAccumulator >= 0.1 then
+                                CachedBoundsWidth = nil
+                                CachedBoundsHeight = nil
+                                CachedBoundsOffsetX = nil
+                                CachedBoundsOffsetY = nil
 
-                                                if CornerOnScreen then
-                                                    Projected = true
-                                                    MinX = math.min(MinX, CornerPosition.X)
-                                                    MinY = math.min(MinY, CornerPosition.Y)
-                                                    MaxX = math.max(MaxX, CornerPosition.X)
-                                                    MaxY = math.max(MaxY, CornerPosition.Y)
+                                for _, Part in ipairs(Character:GetChildren()) do
+                                    if Part:IsA("BasePart") and Part.Transparency < 1 then
+                                        local PartCFrame = Part.CFrame
+                                        local Half = Part.Size / 2
+
+                                        for XIndex = -1, 1, 2 do
+                                            for YIndex = -1, 1, 2 do
+                                                for ZIndex = -1, 1, 2 do
+                                                    local CornerPosition, CornerOnScreen = Cam:WorldToScreenPoint(PartCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex)))
+
+                                                    if CornerOnScreen then
+                                                        Projected = true
+                                                        MinX = math.min(MinX, CornerPosition.X)
+                                                        MinY = math.min(MinY, CornerPosition.Y)
+                                                        MaxX = math.max(MaxX, CornerPosition.X)
+                                                        MaxY = math.max(MaxY, CornerPosition.Y)
+                                                    end
                                                 end
                                             end
                                         end
                                     end
                                 end
+
+                                if Projected then
+                                    CachedBoundsWidth = math.max(MaxX - MinX, 1)
+                                    CachedBoundsHeight = math.max(MaxY - MinY, 1)
+                                    CachedBoundsOffsetX = ((MinX + MaxX) / 2) - Pos.X
+                                    CachedBoundsOffsetY = ((MinY + MaxY) / 2) - Pos.Y
+                                end
+
+                                BoundsAccumulator = 0
                             end
 
-                            if Projected then
-                                w, h = math.max(MaxX - MinX, 1), math.max(MaxY - MinY, 1)
-                                Pos = Vector2.new((MinX + MaxX) / 2, (MinY + MaxY) / 2)
+                            if CachedBoundsWidth and CachedBoundsHeight then
+                                w, h = CachedBoundsWidth, CachedBoundsHeight
+                                Pos = Vector2.new(Pos.X + (CachedBoundsOffsetX or 0), Pos.Y + (CachedBoundsOffsetY or 0))
                             else
                                 -- fallback to the old fixed sizing when no corner projected
                                 local Size = HRP.Size.Y
@@ -2135,88 +2546,121 @@ do -- Initalize
 
                         -- Fade-out effect --
                         if ESP.FadeOut.OnDistance then
-                            Functions:FadeOutOnDist(Box, Dist)
-                            Functions:FadeOutOnDist(Outline, Dist)
-                            Functions:FadeOutOnDist(Name, Dist)
-                            Functions:FadeOutOnDist(Distance, Dist)
-                            Functions:FadeOutOnDist(Weapon, Dist)
-                            Functions:FadeOutOnDist(Healthbar, Dist)
-                            Functions:FadeOutOnDist(BehindHealthbar, Dist)
-                            Functions:FadeOutOnDist(HealthText, Dist)
-                            Functions:FadeOutOnDist(WeaponIcon, Dist)
-                            Functions:FadeOutOnDist(LeftTop, Dist)
-                            Functions:FadeOutOnDist(LeftSide, Dist)
-                            Functions:FadeOutOnDist(BottomSide, Dist)
-                            Functions:FadeOutOnDist(BottomDown, Dist)
-                            Functions:FadeOutOnDist(RightTop, Dist)
-                            Functions:FadeOutOnDist(RightSide, Dist)
-                            Functions:FadeOutOnDist(BottomRightSide, Dist)
-                            Functions:FadeOutOnDist(BottomRightDown, Dist)
-                            Functions:FadeOutOnDist(VisibleChams, Dist)
-                            Functions:FadeOutOnDist(HiddenChams, Dist)
-                            Functions:FadeOutOnDist(Flag1, Dist)
-                            Functions:FadeOutOnDist(Flag2, Dist)
+                            ApplyFade(Dist)
+                        else
+                            LastFadeTransparency = nil
                         end
 
                         -- Teamcheck
                         local IsValidTarget = plr ~= lplayer
                             and (not ESP.TeamCheck or ((lplayer.Team ~= plr.Team and plr.Team) or (not lplayer.Team and not plr.Team)))
-                            and plr.Character
-                            and plr.Character:FindFirstChild("HumanoidRootPart")
-                            and plr.Character:FindFirstChild("Humanoid")
+                            and Character
+                            and HRP
+                            and Humanoid
 
                         if IsValidTarget then
+                            IsHidden = false
 
                             do -- Chams
-                                local ChamsMode = ESP.Drawing.Chams.Mode or (ESP.Drawing.Chams.VisibleCheck and "VisibleOnly" or "VisibleAndHidden")
-                                local function ClampTransparency(Value)
-                                    return math.max(0, math.min(1, Value))
-                                end
-                                local FillTransparency = ClampTransparency((ESP.Drawing.Chams.Fill_Transparency or 100) * 0.01)
-                                local OutlineTransparency = ClampTransparency((ESP.Drawing.Chams.Outline_Transparency or 100) * 0.01)
+                                local Chams = ESP.Drawing.Chams
+                                local ChamsMode = Chams.Mode or (Chams.VisibleCheck and "VisibleOnly" or "VisibleAndHidden")
+                                local FillTransparency = math.clamp((Chams.Fill_Transparency or 100) * 0.01, 0, 1)
+                                local OutlineTransparency = math.clamp((Chams.Outline_Transparency or 100) * 0.01, 0, 1)
 
-                                if ESP.Drawing.Chams.Thermal then
-                                    local breathe_effect = 0.35 + ((math.sin(tick() * 2) + 1) * 0.325)
-                                    FillTransparency = ClampTransparency(FillTransparency * breathe_effect)
-                                    OutlineTransparency = ClampTransparency(OutlineTransparency * breathe_effect)
+                                if Chams.Thermal then
+                                    local ThermalTime = math.floor(CurrentTime * 10) / 10
+                                    local breathe_effect = 0.35 + ((math.sin(ThermalTime * 2) + 1) * 0.325)
+                                    FillTransparency = math.clamp(FillTransparency * breathe_effect, 0, 1)
+                                    OutlineTransparency = math.clamp(OutlineTransparency * breathe_effect, 0, 1)
                                 end
+
+                                local ChamsEnabled = Chams.Enabled == true
+                                local HiddenChamsEnabled = ChamsEnabled and ChamsMode == "VisibleAndHidden"
+                                local VisibleChamsEnabled = ChamsEnabled
+                                local ChamsFillColor = Chams.VisibleFillRGB or Chams.FillRGB
+                                local ChamsOutlineColor = Chams.VisibleOutlineRGB or Chams.OutlineRGB
+                                local HiddenChamsFillColor = Chams.HiddenFillRGB or Chams.FillRGB
+                                local HiddenChamsOutlineColor = Chams.HiddenOutlineRGB or Chams.OutlineRGB
+                                local ChamsSettingsChanged = LastChamsCharacter ~= Character
+                                    or LastChamsEnabled ~= ChamsEnabled
+                                    or LastChamsMode ~= ChamsMode
+                                    or LastChamsFillColor ~= ChamsFillColor
+                                    or LastChamsOutlineColor ~= ChamsOutlineColor
+                                    or LastChamsFillTransparency ~= FillTransparency
+                                    or LastChamsOutlineTransparency ~= OutlineTransparency
 
                                 if HiddenChams then
-                                    pcall(function()
-                                        HiddenChams.Adornee = plr.Character
-                                        HiddenChams.Enabled = ESP.Drawing.Chams.Enabled and ChamsMode == "VisibleAndHidden"
-                                        HiddenChams.FillColor = ESP.Drawing.Chams.HiddenFillRGB or ESP.Drawing.Chams.FillRGB
-                                        HiddenChams.OutlineColor = ESP.Drawing.Chams.HiddenOutlineRGB or ESP.Drawing.Chams.OutlineRGB
-                                        HiddenChams.FillTransparency = FillTransparency
-                                        HiddenChams.OutlineTransparency = OutlineTransparency
-                                        HiddenChams.DepthMode = "AlwaysOnTop"
-                                    end)
+                                    if ChamsSettingsChanged then
+                                        pcall(function()
+                                            HiddenChams.Adornee = Character
+                                            HiddenChams.FillColor = HiddenChamsFillColor
+                                            HiddenChams.OutlineColor = HiddenChamsOutlineColor
+                                            HiddenChams.FillTransparency = FillTransparency
+                                            HiddenChams.OutlineTransparency = OutlineTransparency
+                                            HiddenChams.DepthMode = "AlwaysOnTop"
+                                        end)
+                                    end
+
+                                    if LastHiddenChamsEnabled ~= HiddenChamsEnabled then
+                                        LastHiddenChamsEnabled = HiddenChamsEnabled
+                                        HiddenChams.Enabled = HiddenChamsEnabled
+                                    end
                                 end
 
                                 if VisibleChams then
-                                    pcall(function()
-                                        VisibleChams.Adornee = plr.Character
-                                        VisibleChams.Enabled = ESP.Drawing.Chams.Enabled
-                                        VisibleChams.FillColor = ESP.Drawing.Chams.VisibleFillRGB or ESP.Drawing.Chams.FillRGB
-                                        VisibleChams.OutlineColor = ESP.Drawing.Chams.VisibleOutlineRGB or ESP.Drawing.Chams.OutlineRGB
-                                        VisibleChams.FillTransparency = FillTransparency
-                                        VisibleChams.OutlineTransparency = OutlineTransparency
-                                        VisibleChams.DepthMode = "Occluded"
-                                    end)
+                                    if ChamsSettingsChanged then
+                                        pcall(function()
+                                            VisibleChams.Adornee = Character
+                                            VisibleChams.FillColor = ChamsFillColor
+                                            VisibleChams.OutlineColor = ChamsOutlineColor
+                                            VisibleChams.FillTransparency = FillTransparency
+                                            VisibleChams.OutlineTransparency = OutlineTransparency
+                                            VisibleChams.DepthMode = "Occluded"
+                                        end)
+                                    end
+
+                                    if LastVisibleChamsEnabled ~= VisibleChamsEnabled then
+                                        LastVisibleChamsEnabled = VisibleChamsEnabled
+                                        VisibleChams.Enabled = VisibleChamsEnabled
+                                    end
                                 end
+
+                                LastChamsCharacter = Character
+                                LastChamsEnabled = ChamsEnabled
+                                LastChamsMode = ChamsMode
+                                LastChamsFillColor = ChamsFillColor
+                                LastChamsOutlineColor = ChamsOutlineColor
+                                LastChamsFillTransparency = FillTransparency
+                                LastChamsOutlineTransparency = OutlineTransparency
                             end;
 
                             do -- Corner Boxes
-                                LeftTop.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                LeftSide.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                BottomSide.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                BottomDown.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                RightTop.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                RightSide.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                BottomRightSide.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
-                                BottomRightDown.BackgroundColor3 = ESP.Drawing.Boxes.Corner.RGB
+                                local CornerColor = ESP.Drawing.Boxes.Corner.RGB
+                                if LastCornerColor ~= CornerColor then
+                                    LastCornerColor = CornerColor
+                                    LeftTop.BackgroundColor3 = CornerColor
+                                    LeftSide.BackgroundColor3 = CornerColor
+                                    BottomSide.BackgroundColor3 = CornerColor
+                                    BottomDown.BackgroundColor3 = CornerColor
+                                    RightTop.BackgroundColor3 = CornerColor
+                                    RightSide.BackgroundColor3 = CornerColor
+                                    BottomRightSide.BackgroundColor3 = CornerColor
+                                    BottomRightDown.BackgroundColor3 = CornerColor
+                                end
 
-                                LeftTop.Visible = ESP.Drawing.Boxes.Corner.Enabled
+                                local CornerEnabled = ESP.Drawing.Boxes.Corner.Enabled
+                                if LastCornerEnabled ~= CornerEnabled then
+                                    LastCornerEnabled = CornerEnabled
+                                    LeftTop.Visible = CornerEnabled
+                                    LeftSide.Visible = CornerEnabled
+                                    BottomSide.Visible = CornerEnabled
+                                    BottomDown.Visible = CornerEnabled
+                                    RightTop.Visible = CornerEnabled
+                                    RightSide.Visible = CornerEnabled
+                                    BottomRightSide.Visible = CornerEnabled
+                                    BottomRightDown.Visible = CornerEnabled
+                                end
+
                                 LeftTop.Position = UDim2.new(0, Pos.X - w / 2, 0, Pos.Y - h / 2)
                                 LeftTop.Size = UDim2.new(0, w / 5, 0, 1)
                                 
@@ -2258,86 +2702,192 @@ do -- Initalize
                             do -- Boxes
                                 Box.Position = UDim2.new(0, Pos.X - w / 2, 0, Pos.Y - h / 2)
                                 Box.Size = UDim2.new(0, w, 0, h)
-                                ESP.Drawing.Boxes.Full.Enabled = true
                                 Box.Visible = true
-                                Box.BorderColor3 = ESP.Drawing.Boxes.Full.RGB
+                                local Boxes = ESP.Drawing.Boxes
+                                local BoxGradientEnabled = Boxes.Gradient == true
+                                local BoxFillEnabled = Boxes.Filled.Enabled == true
+                                local BoxAnimationEnabled = Boxes.Animate == true
 
-                                Gradient1.Enabled = ESP.Drawing.Boxes.Filled.Enabled and ESP.Drawing.Boxes.GradientFill
-                                Gradient1.Color = ColorSequence.new{
-                                    ColorSequenceKeypoint.new(0, ESP.Drawing.Boxes.GradientFillRGB1),
-                                    ColorSequenceKeypoint.new(1, ESP.Drawing.Boxes.GradientFillRGB2)
-                                }
+                                if LastBoxGradientEnabled ~= BoxGradientEnabled then
+                                    LastBoxGradientEnabled = BoxGradientEnabled
+                                    Outline.Enabled = BoxGradientEnabled
+                                    Gradient2.Enabled = BoxGradientEnabled
+                                end
 
-                                Outline.Enabled = ESP.Drawing.Boxes.Gradient
-                                Outline.Color = ESP.Drawing.Boxes.Full.RGB
-                                Gradient2.Enabled = ESP.Drawing.Boxes.Gradient
-                                Gradient2.Color = ColorSequence.new{
-                                    ColorSequenceKeypoint.new(0, ESP.Drawing.Boxes.GradientRGB1),
-                                    ColorSequenceKeypoint.new(1, ESP.Drawing.Boxes.GradientRGB2)
-                                }
+                                if LastBoxFillEnabled ~= BoxFillEnabled then
+                                    LastBoxFillEnabled = BoxFillEnabled
+                                    Gradient1.Enabled = BoxFillEnabled and Boxes.GradientFill == true
+                                elseif BoxFillEnabled then
+                                    local GradientFillEnabled = Boxes.GradientFill == true
+                                    if Gradient1.Enabled ~= GradientFillEnabled then
+                                        Gradient1.Enabled = GradientFillEnabled
+                                    end
+                                end
+
+                                if BoxFillEnabled and LastBoxFillColor ~= Boxes.Filled.RGB then
+                                    LastBoxFillColor = Boxes.Filled.RGB
+                                    Box.BackgroundColor3 = Boxes.Filled.RGB
+                                elseif not BoxFillEnabled then
+                                    LastBoxFillColor = nil
+                                end
+
+                                if BoxFillEnabled and LastBoxFillTransparency ~= Boxes.Filled.Transparency then
+                                    LastBoxFillTransparency = Boxes.Filled.Transparency
+                                    Box.BackgroundTransparency = Boxes.Filled.Transparency
+                                elseif not BoxFillEnabled then
+                                    LastBoxFillTransparency = nil
+                                end
+
+                                if LastBoxAnimationEnabled ~= BoxAnimationEnabled then
+                                    LastBoxAnimationEnabled = BoxAnimationEnabled
+                                    if not BoxAnimationEnabled then
+                                        Gradient1.Rotation = -45
+                                        Gradient2.Rotation = -45
+                                    end
+                                end
+
+                                if Box.BorderColor3 ~= Boxes.Full.RGB then
+                                    Box.BorderColor3 = Boxes.Full.RGB
+                                end
+
+                                if LastFillGradient1 ~= Boxes.GradientFillRGB1 or LastFillGradient2 ~= Boxes.GradientFillRGB2 then
+                                    LastFillGradient1 = Boxes.GradientFillRGB1
+                                    LastFillGradient2 = Boxes.GradientFillRGB2
+                                    Gradient1.Color = ColorSequence.new{
+                                        ColorSequenceKeypoint.new(0, LastFillGradient1),
+                                        ColorSequenceKeypoint.new(1, LastFillGradient2)
+                                    }
+                                end
+
+                                if LastOutlineGradient1 ~= Boxes.GradientRGB1 or LastOutlineGradient2 ~= Boxes.GradientRGB2 then
+                                    LastOutlineGradient1 = Boxes.GradientRGB1
+                                    LastOutlineGradient2 = Boxes.GradientRGB2
+                                    Gradient2.Color = ColorSequence.new{
+                                        ColorSequenceKeypoint.new(0, LastOutlineGradient1),
+                                        ColorSequenceKeypoint.new(1, LastOutlineGradient2)
+                                    }
+                                end
 
                                 -- Fill
-                                if ESP.Drawing.Boxes.Filled.Enabled then
-                                    Box.BackgroundColor3 = ESP.Drawing.Boxes.Filled.RGB
-                                    Box.BackgroundTransparency = ESP.Drawing.Boxes.Filled.Transparency
-                                    Box.BorderSizePixel = 1
-                                else
+                                if not BoxFillEnabled then
                                     Box.BackgroundTransparency = 1
-                                    Box.BorderSizePixel = 1
                                 end
+                                Box.BorderSizePixel = 1
                                 -- Animation
-                                RotationAngle = RotationAngle + (tick() - Tick) * ESP.Drawing.Boxes.RotationSpeed * math.cos(math.pi / 4 * tick() - math.pi / 2)
-                                if ESP.Drawing.Boxes.Animate then
+                                if BoxAnimationEnabled then
+                                    local CurrentTime = tick()
+                                    RotationAngle = RotationAngle + (CurrentTime - Tick) * Boxes.RotationSpeed * math.cos(math.pi / 4 * CurrentTime - math.pi / 2)
                                     Gradient1.Rotation = RotationAngle
                                     Gradient2.Rotation = RotationAngle
-                                else
-                                    Gradient1.Rotation = -45
-                                    Gradient2.Rotation = -45
+                                    Tick = CurrentTime
                                 end
-                                Tick = tick()
                             end
 
                             -- Healthbar
                             do  
-                                local health = Humanoid.Health / Humanoid.MaxHealth;
-                                HealthbarGradient.Enabled = ESP.Drawing.Healthbar.Gradient
-                                HealthbarGradient.Color = ColorSequence.new{
-                                    ColorSequenceKeypoint.new(0, ESP.Drawing.Healthbar.GradientRGB1),
-                                    ColorSequenceKeypoint.new(0.5, ESP.Drawing.Healthbar.GradientRGB2),
-                                    ColorSequenceKeypoint.new(1, ESP.Drawing.Healthbar.GradientRGB3)
-                                }
+                                local HealthbarSettings = ESP.Drawing.Healthbar
+                                local health = Humanoid.Health / math.max(Humanoid.MaxHealth, 1)
+                                local HealthbarGradientEnabled = HealthbarSettings.Gradient == true
+                                if LastHealthbarGradientEnabled ~= HealthbarGradientEnabled then
+                                    LastHealthbarGradientEnabled = HealthbarGradientEnabled
+                                    HealthbarGradient.Enabled = HealthbarGradientEnabled
+                                end
 
-                                Healthbar.Visible = ESP.Drawing.Healthbar.Enabled;
-                                Healthbar.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2 + h * (1 - health))  
-                                Healthbar.Size = UDim2.new(0, ESP.Drawing.Healthbar.Width, 0, h * health)  
+                                if LastHealthGradient1 ~= HealthbarSettings.GradientRGB1 or LastHealthGradient2 ~= HealthbarSettings.GradientRGB2 or LastHealthGradient3 ~= HealthbarSettings.GradientRGB3 then
+                                    LastHealthGradient1 = HealthbarSettings.GradientRGB1
+                                    LastHealthGradient2 = HealthbarSettings.GradientRGB2
+                                    LastHealthGradient3 = HealthbarSettings.GradientRGB3
+                                    HealthbarGradient.Color = ColorSequence.new{
+                                        ColorSequenceKeypoint.new(0, LastHealthGradient1),
+                                        ColorSequenceKeypoint.new(0.5, LastHealthGradient2),
+                                        ColorSequenceKeypoint.new(1, LastHealthGradient3)
+                                    }
+                                end
+
+                                local HealthbarEnabled = HealthbarSettings.Enabled == true
+                                if LastHealthbarEnabled ~= HealthbarEnabled then
+                                    LastHealthbarEnabled = HealthbarEnabled
+                                    Healthbar.Visible = HealthbarEnabled
+                                    BehindHealthbar.Visible = HealthbarEnabled
+                                end
+
+                                Healthbar.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2 + h * (1 - health))
+                                Healthbar.Size = UDim2.new(0, HealthbarSettings.Width, 0, h * health)
                                 --
-                                BehindHealthbar.Visible = ESP.Drawing.Healthbar.Enabled;
-                                BehindHealthbar.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2)  
-                                BehindHealthbar.Size = UDim2.new(0, ESP.Drawing.Healthbar.Width, 0, h)
+                                BehindHealthbar.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2)
+                                BehindHealthbar.Size = UDim2.new(0, HealthbarSettings.Width, 0, h)
                                 -- Health Text
                                 do
-                                    if ESP.Drawing.Healthbar.HealthText then
-                                        local healthPercentage = math.floor(Humanoid.Health / Humanoid.MaxHealth * 100)
+                                    local HealthTextEnabled = HealthbarSettings.HealthText == true
+                                    if LastHealthTextEnabled ~= HealthTextEnabled then
+                                        LastHealthTextEnabled = HealthTextEnabled
+                                        if not HealthTextEnabled then
+                                            HealthText.Visible = false
+                                        end
+                                    end
+
+                                    if HealthTextEnabled then
+                                        local healthPercentage = math.floor(health * 100)
                                         HealthText.Position = UDim2.new(0, Pos.X - w / 2 - 6, 0, Pos.Y - h / 2 + h * (1 - healthPercentage / 100) + 3)
-                                        HealthText.Text = tostring(healthPercentage)
-                                        HealthText.Visible = Humanoid.Health < Humanoid.MaxHealth
-                                        if ESP.Drawing.Healthbar.Lerp then
+                                        if LastHealthTextValue ~= healthPercentage then
+                                            LastHealthTextValue = healthPercentage
+                                            HealthText.Text = tostring(healthPercentage)
+                                        end
+
+                                        local HealthTextVisible = Humanoid.Health < Humanoid.MaxHealth
+                                        if HealthText.Visible ~= HealthTextVisible then
+                                            HealthText.Visible = HealthTextVisible
+                                        end
+
+                                        local HealthTextColor
+                                        if HealthbarSettings.Lerp then
                                             local color = health >= 0.75 and Color3.fromRGB(0, 255, 0) or health >= 0.5 and Color3.fromRGB(255, 255, 0) or health >= 0.25 and Color3.fromRGB(255, 170, 0) or Color3.fromRGB(255, 0, 0)
-                                            HealthText.TextColor3 = color
+                                            HealthTextColor = color
                                         else
-                                            HealthText.TextColor3 = ESP.Drawing.Healthbar.HealthTextRGB
+                                            HealthTextColor = HealthbarSettings.HealthTextRGB
+                                        end
+
+                                        if HealthText.TextColor3 ~= HealthTextColor then
+                                            HealthText.TextColor3 = HealthTextColor
                                         end
                                     end                        
                                 end
                             end
 
                             do -- Names
-                                Name.Visible = ESP.Drawing.Names.Enabled
-                                Name.TextColor3 = ESP.Drawing.Names.RGB
-                                if ESP.Options.Friendcheck and lplayer:IsFriendsWith(plr.UserId) then
-                                    Name.Text = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s', ESP.Options.FriendcheckRGB.R * 255, ESP.Options.FriendcheckRGB.G * 255, ESP.Options.FriendcheckRGB.B * 255, plr.Name)
+                                local NameSettings = ESP.Drawing.Names
+                                local NameEnabled = NameSettings.Enabled == true
+                                if LastNameEnabled ~= NameEnabled then
+                                    LastNameEnabled = NameEnabled
+                                    Name.Visible = NameEnabled
+                                end
+
+                                if LastNameColor ~= NameSettings.RGB then
+                                    LastNameColor = NameSettings.RGB
+                                    Name.TextColor3 = NameSettings.RGB
+                                end
+
+                                local NameText
+                                if ESP.Options.Friendcheck and IsFriend then
+                                    local FriendColor = ESP.Options.FriendcheckRGB
+                                    NameText = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s', FriendColor.R * 255, FriendColor.G * 255, FriendColor.B * 255, plr.Name)
                                 else
-                                    Name.Text = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s', 255, 0, 0, plr.Name)
+                                    NameText = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s', 255, 0, 0, plr.Name)
+                                end
+
+                                if ESP.Drawing.Distances.Enabled and ESP.Drawing.Distances.Position == "Text" then
+                                    local DistanceValue = math.floor(Dist)
+                                    if ESP.Options.Friendcheck and IsFriend then
+                                        local FriendColor = ESP.Options.FriendcheckRGB
+                                        NameText = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s [%d]', FriendColor.R * 255, FriendColor.G * 255, FriendColor.B * 255, plr.Name, DistanceValue)
+                                    else
+                                        NameText = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s [%d]', 255, 0, 0, plr.Name, DistanceValue)
+                                    end
+                                end
+
+                                if LastNameText ~= NameText then
+                                    LastNameText = NameText
+                                    Name.Text = NameText
                                 end
                                 Name.Position = UDim2.new(0, Pos.X, 0, Pos.Y - h / 2 - 9)
                             end
@@ -2363,55 +2913,100 @@ do -- Initalize
                             end]]
                             
                             do -- Distance
-                                if ESP.Drawing.Distances.Enabled then
-                                    if ESP.Drawing.Distances.Position == "Bottom" then
+                                local DistanceEnabled = ESP.Drawing.Distances.Enabled == true
+                                local DistancePosition = ESP.Drawing.Distances.Position
+                                local DistanceVisible = DistanceEnabled and DistancePosition == "Bottom"
+                                if Distance.Visible ~= DistanceVisible then
+                                    Distance.Visible = DistanceVisible
+                                end
+
+                                if DistanceEnabled then
+                                    if DistancePosition == "Bottom" then
                                         Weapon.Position = UDim2.new(0, Pos.X, 0, Pos.Y + h / 2 + 18)
                                         WeaponIcon.Position = UDim2.new(0, Pos.X - 21, 0, Pos.Y + h / 2 + 15);
                                         Distance.Position = UDim2.new(0, Pos.X, 0, Pos.Y + h / 2 + 7)
-                                        Distance.TextColor3 = ESP.Drawing.Distances.RGB
-                                        Distance.Text = string.format("%d meters", math.floor(Dist))
-                                        Distance.Visible = true
-                                    elseif ESP.Drawing.Distances.Position == "Text" then
+                                        if Distance.TextColor3 ~= ESP.Drawing.Distances.RGB then
+                                            Distance.TextColor3 = ESP.Drawing.Distances.RGB
+                                        end
+
+                                        local DistanceText = string.format("%d meters", math.floor(Dist))
+                                        if Distance.Text ~= DistanceText then
+                                            Distance.Text = DistanceText
+                                        end
+                                    elseif DistancePosition == "Text" then
                                         Weapon.Position = UDim2.new(0, Pos.X, 0, Pos.Y + h / 2 + 8)
                                         WeaponIcon.Position = UDim2.new(0, Pos.X - 21, 0, Pos.Y + h / 2 + 5);
-                                        Distance.Visible = false
-                                        if ESP.Options.Friendcheck and lplayer:IsFriendsWith(plr.UserId) then
-                                            Name.Text = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s [%d]', ESP.Options.FriendcheckRGB.R * 255, ESP.Options.FriendcheckRGB.G * 255, ESP.Options.FriendcheckRGB.B * 255, plr.Name, math.floor(Dist))
-                                        else
-                                            Name.Text = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s [%d]', 255, 0, 0, plr.Name, math.floor(Dist))
-                                        end
-                                        Name.Visible = ESP.Drawing.Names.Enabled
                                     end
                                 end
                             end
 
                             do -- Weapons
-                                local Success, currentTool = pcall(function()
-                                    return Functions:GetPlayerTool(plr)
-                                end)
-                                currentTool = Success and tostring(currentTool or "none") or "none"
+                                local Weapons = ESP.Drawing.Weapons
+                                local Now = tick()
+                                if Now >= NextWeaponRefresh then
+                                    NextWeaponRefresh = Now + 0.25
 
-                                Gradient3.Enabled = ESP.Drawing.Weapons.Gradient
-                                Gradient3.Color = ColorSequence.new{
-                                    ColorSequenceKeypoint.new(0, ESP.Drawing.Weapons.GradientRGB1),
-                                    ColorSequenceKeypoint.new(1, ESP.Drawing.Weapons.GradientRGB2)
-                                }
+                                    local ToolSuccess, CurrentTool = pcall(function()
+                                        return Functions:GetPlayerTool(plr)
+                                    end)
+                                    CachedTool = ToolSuccess and tostring(CurrentTool or "none") or "none"
 
-                                Weapon.Text = ESP.Drawing.Weapons.Enabled and string.format('[<font color="rgb(%d, %d, %d)">%s</font>]', ESP.Drawing.Weapons.WeaponTextRGB.R * 255, ESP.Drawing.Weapons.WeaponTextRGB.G * 255, ESP.Drawing.Weapons.WeaponTextRGB.B * 255, currentTool) or ""
-                                Weapon.Visible = ESP.Drawing.Weapons.Enabled
+                                    if Weapons.Icons then
+                                        local ImageSuccess, WeaponImage = pcall(function()
+                                            return Functions:GetPlayerToolImg(plr)
+                                        end)
+                                        CachedWeaponImage = ImageSuccess and WeaponImage or nil
+                                    else
+                                        CachedWeaponImage = nil
+                                    end
+                                end
+
+                                local WeaponGradientEnabled = Weapons.Gradient == true
+                                if LastWeaponGradientEnabled ~= WeaponGradientEnabled then
+                                    LastWeaponGradientEnabled = WeaponGradientEnabled
+                                    Gradient3.Enabled = WeaponGradientEnabled
+                                end
+
+                                if LastWeaponGradient1 ~= Weapons.GradientRGB1 or LastWeaponGradient2 ~= Weapons.GradientRGB2 then
+                                    LastWeaponGradient1 = Weapons.GradientRGB1
+                                    LastWeaponGradient2 = Weapons.GradientRGB2
+                                    Gradient3.Color = ColorSequence.new{
+                                        ColorSequenceKeypoint.new(0, LastWeaponGradient1),
+                                        ColorSequenceKeypoint.new(1, LastWeaponGradient2)
+                                    }
+                                end
+
+                                local WeaponEnabled = Weapons.Enabled == true
+                                local WeaponStateChanged = LastWeaponEnabled ~= WeaponEnabled
+                                if WeaponStateChanged then
+                                    LastWeaponEnabled = WeaponEnabled
+                                    Weapon.Visible = WeaponEnabled
+                                end
+
+                                if LastWeaponText ~= CachedTool or LastWeaponColor ~= Weapons.WeaponTextRGB or WeaponStateChanged then
+                                    LastWeaponText = CachedTool
+                                    LastWeaponColor = Weapons.WeaponTextRGB
+                                    Weapon.Text = WeaponEnabled and string.format('[<font color="rgb(%d, %d, %d)">%s</font>]', Weapons.WeaponTextRGB.R * 255, Weapons.WeaponTextRGB.G * 255, Weapons.WeaponTextRGB.B * 255, CachedTool) or ""
+                                end
                                 
                                 do -- Weapon icons
-                                    local ImageSuccess, WeaponImage = pcall(function()
-                                        return Functions:GetPlayerToolImg(plr)
-                                    end)
-                                    WeaponImage = ImageSuccess and WeaponImage or nil
+                                    if LastWeaponIconColor ~= Weapons.RGB then
+                                        LastWeaponIconColor = Weapons.RGB
+                                        WeaponIcon.ImageColor3 = Weapons.RGB
+                                    end
 
-                                    WeaponIcon.ImageColor3 = ESP.Drawing.Weapons.RGB
-                                    if WeaponImage then
-                                        WeaponIcon.Visible = ESP.Drawing.Weapons.Icons
-                                        WeaponIcon.Image = WeaponImage
+                                    if CachedWeaponImage then
+                                        local IconVisible = Weapons.Icons == true
+                                        if WeaponIcon.Visible ~= IconVisible then
+                                            WeaponIcon.Visible = IconVisible
+                                        end
+                                        if WeaponIcon.Image ~= CachedWeaponImage then
+                                            WeaponIcon.Image = CachedWeaponImage
+                                        end
                                     else
-                                        WeaponIcon.Visible = false
+                                        if WeaponIcon.Visible then
+                                            WeaponIcon.Visible = false
+                                        end
                                     end
                                 end
                             end                            
