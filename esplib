@@ -474,31 +474,15 @@ local Weapon_Icons = {
     ["MK23"] = "rbxassetid://17440342949",
 };
 
--- Project Delta character data.  Only these avatar parts are used for the
--- 2D bounds, so backpacks, helmets, weapons, and other attached gear cannot
--- inflate the player box.
-local ProjectDeltaBodyParts = {
-    Head = true,
-    Torso = true,
-    ["Left Arm"] = true,
-    ["Right Arm"] = true,
-    ["Left Leg"] = true,
-    ["Right Leg"] = true,
-    UpperTorso = true,
-    LowerTorso = true,
-    HumanoidRootPart = true,
-    LeftUpperArm = true,
-    LeftLowerArm = true,
-    LeftHand = true,
-    RightUpperArm = true,
-    RightLowerArm = true,
-    RightHand = true,
-    LeftUpperLeg = true,
-    LeftLowerLeg = true,
-    LeftFoot = true,
-    RightUpperLeg = true,
-    RightLowerLeg = true,
-    RightFoot = true,
+-- Project Delta uses a stable avatar scale for its player boxes.  Sizing from
+-- HumanoidRootPart avoids armor, backpacks, and weapons changing the box shape.
+local ProjectDeltaSizing = {
+    Width = 3,
+    Height = 4.5,
+    PaddingX = 12,
+    PaddingY = 7,
+    VerticalOffset = 2.5,
+    StudsPerMeter = 3.5714285714,
 }
 
 -- Functions
@@ -515,14 +499,6 @@ do
     function Functions:GetReplicatedPlayer(Player)
         local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
         return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
-    end
-
-    function Functions:IsProjectDeltaBodyPart(Part)
-        return Part
-            and Part:IsA("BasePart")
-            and Part.Transparency < 1
-            and Part.LocalTransparencyModifier < 1
-            and ProjectDeltaBodyParts[Part.Name] == true
     end
 
     function Functions:GetEquippedToolValue(Player)
@@ -810,11 +786,6 @@ do -- Initalize
         local Updater = function()
             local Connection;
             local UpdateAccumulator = 0
-            local BoundsAccumulator = 0
-            local CachedCharacter
-            local CachedBoundsCFrame
-            local CachedBoundsOffset
-            local CachedBoundsSize
             local UpdateInterval = 1 / math.max(ESP.UpdateRate or 30, 1)
             local LastUpdateRate = ESP.UpdateRate or 30
             local IsHidden = false
@@ -1002,107 +973,20 @@ do -- Initalize
                 local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
 
                 if Character and HRP and Humanoid then
-                    if CachedCharacter ~= Character then
-                        CachedCharacter = Character
-                        CachedBoundsCFrame = nil
-                        CachedBoundsOffset = nil
-                        CachedBoundsSize = nil
-                        BoundsAccumulator = 0
-                    else
-                        BoundsAccumulator = BoundsAccumulator + UpdateInterval
-                    end
-
                     local Pos, OnScreen = Cam:WorldToScreenPoint(HRP.Position)
-                    local Dist = (Cam.CFrame.Position - HRP.Position).Magnitude / 3.5714285714
+                    local Dist = (Cam.CFrame.Position - HRP.Position).Magnitude / ProjectDeltaSizing.StudsPerMeter
                     
                     if OnScreen and Dist <= ESP.MaxDistance then
                         local w, h
 
-                        do -- Snug body bounds (ignore accessories and held tools)
-                            local MinX, MinY = math.huge, math.huge
-                            local MaxX, MaxY = -math.huge, -math.huge
-                            local Projected = false
+                        do -- Project Delta static sizing
+                            local CurrentFieldOfView = math.max(Cam.FieldOfView, 1)
+                            local FovCompensation = math.tan(math.rad(BaseFieldOfView) * 0.5) / math.tan(math.rad(CurrentFieldOfView) * 0.5)
+                            local ScaleFactor = ((HRP.Size.Y * Cam.ViewportSize.Y) / (Pos.Z * 2)) * FovCompensation
 
-                            if not CachedBoundsCFrame or BoundsAccumulator >= 0.1 then
-                                local BoundsSuccess, BoundsOffset, BoundsSize = pcall(function()
-                                    local Min = Vector3.new(math.huge, math.huge, math.huge)
-                                    local Max = Vector3.new(-math.huge, -math.huge, -math.huge)
-                                    local BodyPartCount = 0
-
-                                    for _, Part in ipairs(Character:GetChildren()) do
-                                        if Functions:IsProjectDeltaBodyPart(Part) then
-                                            local RelativeCFrame = HRP.CFrame:ToObjectSpace(Part.CFrame)
-                                            local Half = Part.Size / 2
-
-                                            for XIndex = -1, 1, 2 do
-                                                for YIndex = -1, 1, 2 do
-                                                    for ZIndex = -1, 1, 2 do
-                                                        local Corner = RelativeCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex))
-                                                        Min = Vector3.new(math.min(Min.X, Corner.X), math.min(Min.Y, Corner.Y), math.min(Min.Z, Corner.Z))
-                                                        Max = Vector3.new(math.max(Max.X, Corner.X), math.max(Max.Y, Corner.Y), math.max(Max.Z, Corner.Z))
-                                                    end
-                                                end
-                                            end
-
-                                            BodyPartCount = BodyPartCount + 1
-                                        end
-                                    end
-
-                                    if BodyPartCount == 0 then
-                                        return nil, nil
-                                    end
-
-                                    return CFrame.new((Min + Max) / 2), Max - Min
-                                end)
-
-                                if BoundsSuccess and BoundsOffset and BoundsSize then
-                                    CachedBoundsOffset = BoundsOffset
-                                    CachedBoundsSize = BoundsSize
-                                    CachedBoundsCFrame = HRP.CFrame * BoundsOffset
-                                end
-
-                                BoundsAccumulator = 0
-                            end
-
-                            local BoundsCFrame = CachedBoundsOffset and HRP.CFrame * CachedBoundsOffset or CachedBoundsCFrame
-                            local BoundsSize = CachedBoundsSize
-
-                            if BoundsCFrame and BoundsSize then
-                                local Half = BoundsSize / 2
-
-                                for XIndex = -1, 1, 2 do
-                                    for YIndex = -1, 1, 2 do
-                                        for ZIndex = -1, 1, 2 do
-                                            local CornerPosition = Cam:WorldToScreenPoint(BoundsCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex)))
-
-                                            if CornerPosition.Z > 0 then
-                                                Projected = true
-                                                MinX = math.min(MinX, CornerPosition.X)
-                                                MinY = math.min(MinY, CornerPosition.Y)
-                                                MaxX = math.max(MaxX, CornerPosition.X)
-                                                MaxY = math.max(MaxY, CornerPosition.Y)
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-
-                            if Projected then
-                                w, h = math.max(MaxX - MinX, 1), math.max(MaxY - MinY, 1)
-                                Pos = Vector2.new((MinX + MaxX) / 2, (MinY + MaxY) / 2)
-                            else
-                                -- fallback to the old fixed sizing when no corner projected
-                                local Size = HRP.Size.Y
-                                local CurrentFieldOfView = math.max(Cam.FieldOfView, 1)
-                                local FovCompensation = math.tan(math.rad(BaseFieldOfView) * 0.5) / math.tan(math.rad(CurrentFieldOfView) * 0.5)
-                                local scaleFactor = ((Size * Cam.ViewportSize.Y) / (Pos.Z * 2)) * FovCompensation
-                                w, h = 3 * scaleFactor, 4.5 * scaleFactor
-                            end
-
-                            -- Preserve the existing visual padding.
-                            w = w + 12
-                            h = h + 7
-                            Pos = Vector2.new(Pos.X, Pos.Y + 2.5)
+                            w = math.max(ProjectDeltaSizing.Width * ScaleFactor, 1) + ProjectDeltaSizing.PaddingX
+                            h = math.max(ProjectDeltaSizing.Height * ScaleFactor, 1) + ProjectDeltaSizing.PaddingY
+                            Pos = Vector2.new(Pos.X, Pos.Y + ProjectDeltaSizing.VerticalOffset)
                         end
 
                         -- Fade-out effect. Cache the last value so moving targets
