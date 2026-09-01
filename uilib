@@ -1,6 +1,8 @@
 do --// UI Source
     if getgenv().Library and getgenv().Library.Exit then
-        getgenv().Library:Exit()
+        pcall(function()
+            getgenv().Library:Exit()
+        end)
     end
 
     -- Bad executor support (atleast by a bit)
@@ -211,23 +213,38 @@ do --// UI Source
         end
 
         Library.Exit = function(Self)
+            if Library.Exiting then
+                return
+            end
+
+            Library.Exiting = true
+
             for _, Connection in Library.Connections do
-                Connection:Disconnect()
+                pcall(function()
+                    Connection:Disconnect()
+                end)
             end
 
             for _, Thread in Library.Threads do
-                coroutine.close(Thread)
+                if Thread ~= coroutine.running() and coroutine.status(Thread) ~= "dead" then
+                    pcall(function()
+                        coroutine.close(Thread)
+                    end)
+                end
             end
 
             if Self.Holder then
-                Self.Holder.Instance:Destroy()
+                pcall(function()
+                    Self.Holder.Instance:Destroy()
+                end)
             end
 
             if Self.UnusedHolder then
-                Self.UnusedHolder.Instance:Destroy()
+                pcall(function()
+                    Self.UnusedHolder.Instance:Destroy()
+                end)
             end
 
-            Library = nil
             getgenv().Library = nil
         end
 
