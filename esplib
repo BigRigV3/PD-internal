@@ -1,3 +1,9 @@
+pcall(function()
+    if getgenv().OnixESP and getgenv().OnixESP.Unload then
+        getgenv().OnixESP:Unload()
+    end
+end)
+
 cloneref = cloneref or function(Object) return Object end
 
 local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game:GetService("Workspace")), cloneref(game:GetService("RunService")), cloneref(game:GetService("Players")), game:GetService("CoreGui"), cloneref(game:GetService("ReplicatedStorage"))
@@ -84,6 +90,7 @@ local ESP = {
     },
     Connections = {
         RunService = RunService;
+        List = {};
     };
     Fovcircle = {};
     Fonts = {};
@@ -1097,6 +1104,7 @@ do -- Initalize
                     HideESP();
                 end
             end)
+            table.insert(Euphoria.List, Connection);
         end
         coroutine.wrap(Updater)();
     end
@@ -1107,11 +1115,38 @@ do -- Initalize
             end      
         end
         --
-        game:GetService("Players").PlayerAdded:Connect(function(v)
+        local PlayerAdded = game:GetService("Players").PlayerAdded:Connect(function(v)
             coroutine.wrap(CreatePlayerESP)(v)
         end);
+        table.insert(Euphoria.List, PlayerAdded);
     end;
 end;
+
+-- Unload
+function ESP:Unload()
+    if self.Unloaded then
+        return
+    end
+
+    self.Unloaded = true;
+    self.Enabled = false;
+
+    for _, Connection in pairs(self.Connections.List) do
+        pcall(function()
+            Connection:Disconnect()
+        end)
+    end
+
+    table.clear(self.Connections.List);
+
+    pcall(function()
+        local Holder = CoreGui:FindFirstChild("ESPHolder")
+
+        if Holder then
+            Holder:Destroy()
+        end
+    end)
+end
 
 getgenv().OnixESP = ESP
 return ESP
