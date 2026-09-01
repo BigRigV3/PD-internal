@@ -102,7 +102,9 @@ local function UpdateWatermark()
 
     SetWatermarkItemVisibility("Title", WatermarkFeatures.name)
     SetWatermarkItemVisibility("SubText", #SubText > 0)
-    Watermark:SetSubText(table.concat(SubText, " | "))
+    pcall(function()
+        Watermark:SetSubText(table.concat(SubText, " | "))
+    end)
 end
 
 local function RemoveDrawingObject(Object)
@@ -846,7 +848,9 @@ do -- ui elements
 
     local function SetElementVisibility(Element, ItemName, Value)
         if Element and Element.Items and Element.Items[ItemName] then
-            Element.Items[ItemName].Instance.Visible = Value
+            pcall(function()
+                Element.Items[ItemName].Instance.Visible = Value == true
+            end)
         end
     end
 
@@ -885,7 +889,9 @@ do -- ui elements
             TargetIndicatorEnabled = Value
 
             if not Value then
-                TargetIndicator:ResetConnection()
+                if TargetIndicator then
+                    TargetIndicator:ResetConnection()
+                end
             elseif CurrentTarget then
                 pcall(function()
                     TargetIndicator:SetTarget(CurrentTarget)
@@ -922,13 +928,99 @@ do -- ui elements
     })
 end
 
-local MiscPage = Window:Page({Name = "misc"})
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local MiscPage = Window:Page({
+    Name = "misc"
+})
+
+local ExploitSection = MiscPage:Section({
+    Name = "Exploits",
+    side = 1
+})
+
+local radius = 5
+
+ExploitSection:Button({
+    Name = "Bring all traders",
+
+    Callback = function()
+        local character = player.Character or player.CharacterAdded:Wait()
+        local hrp = character:WaitForChild("HumanoidRootPart")
+
+        local targets = {
+            workspace:FindFirstChild("Jake"),
+            workspace:FindFirstChild("VaultManager"),
+            workspace:FindFirstChild("Boss"),
+            workspace:FindFirstChild("Mihkel"),
+            workspace:FindFirstChild("Nurse"),
+            workspace:FindFirstChild("Blaze"),
+            workspace:FindFirstChild("Seryozha")
+        }
+
+        local validTargets = {}
+
+        for _, target in ipairs(targets) do
+            if target then
+                table.insert(validTargets, target)
+            end
+        end
+
+        for i, target in ipairs(validTargets) do
+            local angle = ((i - 1) / #validTargets) * math.pi * 2
+
+            local offset = Vector3.new(
+                math.cos(angle) * radius,
+                0,
+                math.sin(angle) * radius
+            )
+
+            local position = hrp.Position + offset
+            local cf = CFrame.lookAt(position, hrp.Position)
+
+            if target:IsA("Model") then
+                target:PivotTo(cf)
+
+            elseif target:IsA("BasePart") then
+                target.CFrame = cf
+            end
+        end
+    end
+})
+
+ExploitSection:Slider({
+    Name = "Trader Radius",
+    Min = 0,
+    Max = 10,
+    Default = 5,
+    Decimals = 1,
+    Suffix = " Studs",
+
+    Callback = function(Value)
+        radius = Value
+    end
+})
 
 do -- configs
-    local ConfigsSection = MiscPage:Section({Name = "configs", Side = 2}) do
+    local ConfigsSection = MiscPage:Section({Name = "configs", Side = 2})
         local ConfigsFolder = Library.Directory .. Library.Folders.Configs .. "/"
         local ConfigSelected
         local ConfigName
+
+        local function HasFileApi()
+            return type(isfile) == "function"
+                and type(readfile) == "function"
+                and type(writefile) == "function"
+                and type(delfile) == "function"
+        end
+
+        local function IsSafeConfigName(Name)
+            return type(Name) == "string"
+                and Name ~= ""
+                and not string.find(Name, "[/\\\\]")
+                and not string.find(Name, "%.%.")
+        end
 
         local ConfigsDropdown = ConfigsSection:Dropdown({
             Name = "configs",
@@ -951,15 +1043,27 @@ do -- configs
         ConfigsSection:Button({
             Name = "create",
             Callback = function()
-                if ConfigName then
-                    if ConfigName == "" then
-                        return
-                    end
+                if not HasFileApi() then
+                    Library:Notification{Name = "file API unavailable", Time = 3}
+                    return
+                end
 
-                    writefile(ConfigsFolder .. ConfigName .. ".json", Library:GetConfig())
+                if not IsSafeConfigName(ConfigName) then
+                    Library:Notification{Name = "invalid config name", Time = 3}
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local Config = Library:GetConfig()
+                    assert(type(Config) == "string", "failed to serialize config")
+                    writefile(ConfigsFolder .. ConfigName .. ".json", Config)
                     Library:GetConfigsList(ConfigsDropdown)
+                end)
 
-                    Library:Notification{Name = "created config succesfully", Time = 3}
+                if Success then
+                    Library:Notification{Name = "created config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to create config: " .. tostring(Error), Time = 3}
                 end
             end
         })
@@ -967,13 +1071,24 @@ do -- configs
         ConfigsSection:Button({
             Name = "delete",
             Callback = function()
-                if ConfigSelected then
-                    if isfile(ConfigsFolder .. ConfigSelected .. ".json") then
-                        delfile(ConfigsFolder .. ConfigSelected .. ".json")
-                        Library:GetConfigsList(ConfigsDropdown)
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
 
-                        Library:Notification{Name = "deleted config succesfully", Time = 3}
-                    end
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    delfile(Path)
+                    Library:GetConfigsList(ConfigsDropdown)
+                end)
+
+                if Success then
+                    Library:Notification{Name = "deleted config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to delete config: " .. tostring(Error), Time = 3}
                 end
             end
         })
@@ -981,17 +1096,25 @@ do -- configs
         ConfigsSection:Button({
             Name = "load",
             Callback = function()
-                if ConfigSelected then
-                    if isfile(ConfigsFolder.. ConfigSelected .. ".json") then
-                        local ConfigContent = readfile(ConfigsFolder.. ConfigSelected .. ".json")
-                        local Success, Error = Library:LoadConfig(ConfigContent)
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
 
-                        if Success then
-                            Library:Notification{Name = "loaded config succesfully", Time = 3}
-                        else
-                            Library:Notification{Name = "failed to load config: ".. Error, Time = 3}
-                        end
-                    end
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local ConfigContent = readfile(Path)
+                    local Loaded, LoadError = Library:LoadConfig(ConfigContent)
+                    assert(Loaded, LoadError or "unknown config error")
+                end)
+
+                if Success then
+                    Library:Notification{Name = "loaded config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to load config: " .. tostring(Error), Time = 3}
                 end
             end
         })
@@ -999,18 +1122,25 @@ do -- configs
         ConfigsSection:Button({
             Name = "save",
             Callback = function()
-                if ConfigSelected then
-                    if isfile(ConfigsFolder.. ConfigSelected .. ".json") then
-                        local Success, Error = pcall(function()
-                            writefile(ConfigsFolder .. ConfigSelected .. ".json", Library:GetConfig())
-                        end)
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
 
-                        if Success then
-                            Library:Notification{Name = "saved config succesfully", Time = 3}
-                        else
-                            Library:Notification{Name = "failed to save config: ".. Error, Time = 3}
-                        end
-                    end
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local Config = Library:GetConfig()
+                    assert(type(Config) == "string", "failed to serialize config")
+                    writefile(Path, Config)
+                end)
+
+                if Success then
+                    Library:Notification{Name = "saved config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to save config: " .. tostring(Error), Time = 3}
                 end
             end
         })
@@ -1022,13 +1152,14 @@ do -- configs
             end
         })
 
-        Library:GetConfigsList(ConfigsDropdown)
-    end
+        pcall(function()
+            Library:GetConfigsList(ConfigsDropdown)
+        end)
 end
 
 do -- theming
-    local ThemingSection = UIPage:Section({Name = "theme colors", Side = 2}) do
-        for Index, Value in Library.Theme do
+    local ThemingSection = UIPage:Section({Name = "theme colors", Side = 2})
+        for Index, Value in pairs(Library.Theme) do
             ThemingSection:Label({Name = Index}):Colorpicker({
                 Name = Index,
                 Flag = Index,
@@ -1039,7 +1170,6 @@ do -- theming
                 end
             })
         end
-    end
 end
 
 do -- server
@@ -1047,7 +1177,7 @@ do -- server
     local TeleportService = game:GetService("TeleportService")
     local Players = game:GetService("Players")
 
-    local ServerSection = MiscPage:Section({Name = "server", Side = 2}) do
+    local ServerSection = MiscPage:Section({Name = "server", Side = 2})
         ServerSection:Button({
             Name = "rejoin",
             Callback = function()
@@ -1091,11 +1221,10 @@ do -- server
                 Library:Notification{Name = "copied game id", Time = 3}
             end
         })
-    end
 end
 
 do -- other
-    local OtherSection = MiscPage:Section({Name = "other", Side = 2}) do
+    local OtherSection = MiscPage:Section({Name = "other", Side = 2})
         OtherSection:Button({
             Name = "unload",
             Callback = function()
@@ -1139,7 +1268,6 @@ do -- other
                 Library.Animation.Time = Value
             end
         })
-    end
 end
 
 Window:InitWindow()
