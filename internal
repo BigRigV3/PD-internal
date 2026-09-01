@@ -2902,12 +2902,6 @@ do
         CreateSkinOption(WeaponName, SkinItems)
     end
 
-    Library:Connect(game:GetService("RunService").RenderStepped, function()
-        if SkinChangerEnabled then
-            ApplySkinSelections()
-        end
-    end)
-
     task.spawn(function()
         while not Unloading do
             task.wait(0.5)
@@ -3246,6 +3240,41 @@ do -- other
                 Library.Animation.Time = Value
             end
         })
+end
+
+-- The UI library's default SetOpen implementation fades every descendant of
+-- the menu and creates a tween/completion connection for each one. With a
+-- large menu this causes a noticeable hitch on every hotkey press. Toggling
+-- visibility directly keeps the menu responsive while preserving the normal
+-- open-frame cleanup.
+do
+    local MenuOpenDebounce = false
+
+    function Window:SetOpen(Value)
+        if MenuOpenDebounce then
+            return
+        end
+
+        MenuOpenDebounce = true
+        self.IsOpen = Value == true
+
+        local MainFrame = self.Items
+            and self.Items.MainFrame
+            and self.Items.MainFrame.Instance
+        if MainFrame then
+            MainFrame.Visible = self.IsOpen
+        end
+
+        if Library.OpenFrames then
+            for _, OpenFrame in pairs(Library.OpenFrames) do
+                pcall(function()
+                    OpenFrame:SetOpen(false)
+                end)
+            end
+        end
+
+        MenuOpenDebounce = false
+    end
 end
 
 Window:InitWindow()
