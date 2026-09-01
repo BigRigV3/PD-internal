@@ -474,37 +474,14 @@ local Weapon_Icons = {
     ["MK23"] = "rbxassetid://17440342949",
 };
 
--- Project Delta uses a stable avatar scale for its player boxes.  Sizing from
--- HumanoidRootPart avoids armor, backpacks, and weapons changing the box shape.
+-- Player boxes use the actual visible character geometry. Accessories, tools,
+-- and collision-only parts are deliberately excluded from the screen bounds.
 local ProjectDeltaSizing = {
     PaddingX = 12,
     PaddingY = 7,
     VerticalOffset = 2.5,
     StudsPerMeter = 3.5714285714,
-}
-
-local ProjectDeltaBodyParts = {
-    Head = true,
-    Torso = true,
-    ["Left Arm"] = true,
-    ["Right Arm"] = true,
-    ["Left Leg"] = true,
-    ["Right Leg"] = true,
-    UpperTorso = true,
-    LowerTorso = true,
-    HumanoidRootPart = true,
-    LeftUpperArm = true,
-    LeftLowerArm = true,
-    LeftHand = true,
-    RightUpperArm = true,
-    RightLowerArm = true,
-    RightHand = true,
-    LeftUpperLeg = true,
-    LeftLowerLeg = true,
-    LeftFoot = true,
-    RightUpperLeg = true,
-    RightLowerLeg = true,
-    RightFoot = true,
+    BoundsRefresh = 0.1,
 }
 
 -- Functions
@@ -523,12 +500,33 @@ do
         return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
     end
 
-    function Functions:IsProjectDeltaBodyPart(Part)
-        return Part
-            and Part:IsA("BasePart")
-            and Part.Transparency < 1
-            and Part.LocalTransparencyModifier < 1
-            and ProjectDeltaBodyParts[Part.Name] == true
+    function Functions:IsProjectDeltaCharacterPart(Part, Character)
+        if not Part
+            or not Part:IsA("BasePart")
+            or Part.Transparency >= 1
+            or Part.LocalTransparencyModifier >= 1
+        then
+            return false
+        end
+
+        local Ancestor = Part.Parent
+        while Ancestor and Ancestor ~= Character do
+            if Ancestor:IsA("Accessory") or Ancestor:IsA("Tool") then
+                return false
+            end
+
+            Ancestor = Ancestor.Parent
+        end
+
+        if Ancestor ~= Character then
+            return false
+        end
+
+        local PartName = string.lower(Part.Name)
+        return not string.find(PartName, "hitbox", 1, true)
+            and not string.find(PartName, "collider", 1, true)
+            and not string.find(PartName, "collision", 1, true)
+            and not string.find(PartName, "trigger", 1, true)
     end
 
     function Functions:GetEquippedToolValue(Player)
@@ -818,8 +816,7 @@ do -- Initalize
             local UpdateAccumulator = 0
             local BoundsAccumulator = 0
             local CachedCharacter
-            local CachedBoundsOffset
-            local CachedBoundsSize
+            local CachedBodyParts
             local UpdateInterval = 1 / math.max(ESP.UpdateRate or 30, 1)
             local LastUpdateRate = ESP.UpdateRate or 30
             local IsHidden = false
@@ -829,6 +826,7 @@ do -- Initalize
             local LastFadeTransparency
             local LastCornerColor
             local LastCornerEnabled
+            local LastBoxOutlineEnabled
             local LastBoxGradientEnabled
             local LastBoxFillEnabled
             local LastBoxFillColor
@@ -899,6 +897,7 @@ do -- Initalize
                 LastFadeTransparency = nil
                 LastCornerColor = nil
                 LastCornerEnabled = nil
+                LastBoxOutlineEnabled = nil
                 LastBoxGradientEnabled = nil
                 LastBoxFillEnabled = nil
                 LastBoxFillColor = nil
@@ -1009,8 +1008,7 @@ do -- Initalize
                 if Character and HRP and Humanoid then
                     if CachedCharacter ~= Character then
                         CachedCharacter = Character
-                        CachedBoundsOffset = nil
-                        CachedBoundsSize = nil
+                        CachedBodyParts = nil
                         BoundsAccumulator = 0
                     else
                         BoundsAccumulator = BoundsAccumulator + DeltaTime
@@ -1023,66 +1021,39 @@ do -- Initalize
                         local w, h
 
                         do -- Project Delta body bounding box
-                            if not CachedBoundsOffset or not CachedBoundsSize or BoundsAccumulator >= 0.05 then
-                                local BoundsSuccess, BoundsOffset, Bounds = pcall(function()
-                                    local Min = Vector3.new(math.huge, math.huge, math.huge)
-                                    local Max = Vector3.new(-math.huge, -math.huge, -math.huge)
-                                    local BodyPartCount = 0
+                            if not CachedBodyParts or BoundsAccumulator >= ProjectDeltaSizing.BoundsRefresh then
+                                CachedBodyParts = {}
 
-                                    for _, Part in ipairs(Character:GetChildren()) do
-                                        if Functions:IsProjectDeltaBodyPart(Part) then
-                                            local RelativeCFrame = HRP.CFrame:ToObjectSpace(Part.CFrame)
-                                            local Half = Part.Size / 2
-
-                                            for XIndex = -1, 1, 2 do
-                                                for YIndex = -1, 1, 2 do
-                                                    for ZIndex = -1, 1, 2 do
-                                                        local Corner = RelativeCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex))
-                                                        Min = Vector3.new(math.min(Min.X, Corner.X), math.min(Min.Y, Corner.Y), math.min(Min.Z, Corner.Z))
-                                                        Max = Vector3.new(math.max(Max.X, Corner.X), math.max(Max.Y, Corner.Y), math.max(Max.Z, Corner.Z))
-                                                    end
-                                                end
-                                            end
-
-                                            BodyPartCount = BodyPartCount + 1
-                                        end
+                                for _, Part in ipairs(Character:GetDescendants()) do
+                                    if Functions:IsProjectDeltaCharacterPart(Part, Character) then
+                                        table.insert(CachedBodyParts, Part)
                                     end
-
-                                    if BodyPartCount == 0 then
-                                        return nil, nil
-                                    end
-
-                                    return CFrame.new((Min + Max) / 2), Max - Min
-                                end)
-
-                                if BoundsSuccess and BoundsOffset and Bounds then
-                                    CachedBoundsOffset = BoundsOffset
-                                    CachedBoundsSize = Bounds
                                 end
 
                                 BoundsAccumulator = 0
                             end
 
-                            local BoundsCFrame = CachedBoundsOffset and HRP.CFrame * CachedBoundsOffset
-                            local Bounds = CachedBoundsSize
                             local Projected = false
                             local MinX, MinY = math.huge, math.huge
                             local MaxX, MaxY = -math.huge, -math.huge
 
-                            if BoundsCFrame and Bounds then
-                                local Half = Bounds / 2
+                            for _, Part in ipairs(CachedBodyParts) do
+                                if Functions:IsProjectDeltaCharacterPart(Part, Character) then
+                                    local PartCFrame = Part.CFrame
+                                    local Half = Part.Size / 2
 
-                                for XIndex = -1, 1, 2 do
-                                    for YIndex = -1, 1, 2 do
-                                        for ZIndex = -1, 1, 2 do
-                                            local CornerPosition = Cam:WorldToScreenPoint(BoundsCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex)))
+                                    for XIndex = -1, 1, 2 do
+                                        for YIndex = -1, 1, 2 do
+                                            for ZIndex = -1, 1, 2 do
+                                                local CornerPosition = Cam:WorldToScreenPoint(PartCFrame:PointToWorldSpace(Vector3.new(Half.X * XIndex, Half.Y * YIndex, Half.Z * ZIndex)))
 
-                                            if CornerPosition.Z > 0 then
-                                                Projected = true
-                                                MinX = math.min(MinX, CornerPosition.X)
-                                                MinY = math.min(MinY, CornerPosition.Y)
-                                                MaxX = math.max(MaxX, CornerPosition.X)
-                                                MaxY = math.max(MaxY, CornerPosition.Y)
+                                                if CornerPosition.Z > 0 then
+                                                    Projected = true
+                                                    MinX = math.min(MinX, CornerPosition.X)
+                                                    MinY = math.min(MinY, CornerPosition.Y)
+                                                    MaxX = math.max(MaxX, CornerPosition.X)
+                                                    MaxY = math.max(MaxY, CornerPosition.Y)
+                                                end
                                             end
                                         end
                                     end
@@ -1265,18 +1236,26 @@ do -- Initalize
                             do -- Boxes
                                 Box.Position = UDim2.new(0, Pos.X - w / 2, 0, Pos.Y - h / 2)
                                 Box.Size = UDim2.new(0, w, 0, h)
-                                Box.Visible = true
                                 local Boxes = ESP.Drawing.Boxes
-                                local BoxGradientEnabled = Boxes.Gradient == true
+                                local BoxOutlineEnabled = Boxes.Full.Enabled == true
                                 local BoxFillEnabled = Boxes.Filled.Enabled == true
+                                local BoxGradientEnabled = BoxOutlineEnabled and Boxes.Gradient == true
                                 local BoxAnimationEnabled = Boxes.Animate == true
                                 local BoxFillColor = Boxes.Filled.RGB
                                 local BoxFillTransparency = Boxes.Filled.Transparency
+
+                                Box.Visible = BoxOutlineEnabled or BoxFillEnabled
+
+                                if LastBoxOutlineEnabled ~= BoxOutlineEnabled then
+                                    LastBoxOutlineEnabled = BoxOutlineEnabled
+                                    Box.BorderSizePixel = BoxOutlineEnabled and (BoxGradientEnabled and 0 or 1) or 0
+                                end
 
                                 if LastBoxGradientEnabled ~= BoxGradientEnabled then
                                     LastBoxGradientEnabled = BoxGradientEnabled
                                     Outline.Enabled = BoxGradientEnabled
                                     Gradient2.Enabled = BoxGradientEnabled
+                                    Box.BorderSizePixel = BoxOutlineEnabled and (BoxGradientEnabled and 0 or 1) or 0
                                 end
 
                                 if LastBoxFillEnabled ~= BoxFillEnabled then
@@ -1337,7 +1316,6 @@ do -- Initalize
                                 if not BoxFillEnabled then
                                     Box.BackgroundTransparency = 1
                                 end
-                                Box.BorderSizePixel = 1
                                 -- Animation
                                 if BoxAnimationEnabled then
                                     RotationAngle = RotationAngle + (CurrentTime - Tick) * Boxes.RotationSpeed * math.cos(math.pi / 4 * CurrentTime - math.pi / 2)
