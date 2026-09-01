@@ -1,15 +1,15 @@
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/uilib"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/uilib?token=GHSAT0AAAAAAEHM5ZHFVDKYCWORZ4PWVNAW2UWFEFQ"))()
 -- esp is whats in  d
-local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib"))()
+local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib?token=GHSAT0AAAAAAEHM5ZHEYKB4KWQ6MDXESI4A2UWFD5Q"))()
 
 local Window = Library:Window({
-    Name = 'Onix<font color="rgb(126, 192, 255)">.lol</font> | developer | lifetime',
+    Name = 'Typeshit.cc<font color="rgb(126, 192, 255)">.lol</font> | developer | lifetime',
     Rank = "developer"
 })
 
 do
     local Watermark = Window:Watermark({
-        Name = "Onix.lol Private",
+        Name = "Typeshit.cc Private",
         SubName = "Project Delta"
     })
 
@@ -442,6 +442,209 @@ do
             ESP.Drawing.Chams.OutlineRGB = Value
         end
     })
+end
+
+local MiscPage = Window:Page({Name = "misc"})
+
+do -- configs
+    local ConfigsSection = MiscPage:Section({Name = "configs", Side = 2}) do
+        local ConfigsFolder = Library.Directory .. Library.Folders.Configs .. "/"
+        local ConfigSelected
+        local ConfigName
+
+        local ConfigsDropdown = ConfigsSection:Dropdown({
+            Name = "configs",
+            Flag = "configs_dropdown",
+            Items = { },
+            Multi = false,
+            Callback = function(Value)
+                ConfigSelected = Value
+            end
+        })
+
+        ConfigsSection:Textbox({
+            Flag = "config_name",
+            Placeholder = "",
+            Callback = function(Value)
+                ConfigName = Value
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "create",
+            Callback = function()
+                if ConfigName then
+                    if ConfigName == "" then
+                        return
+                    end
+
+                    writefile(ConfigsFolder .. ConfigName .. ".json", Library:GetConfig())
+                    Library:GetConfigsList(ConfigsDropdown)
+
+                    Library:Notification{Name = "created config succesfully", Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "delete",
+            Callback = function()
+                if ConfigSelected then
+                    if isfile(ConfigsFolder .. ConfigSelected .. ".json") then
+                        delfile(ConfigsFolder .. ConfigSelected .. ".json")
+                        Library:GetConfigsList(ConfigsDropdown)
+
+                        Library:Notification{Name = "deleted config succesfully", Time = 3}
+                    end
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "load",
+            Callback = function()
+                if ConfigSelected then
+                    if isfile(ConfigsFolder.. ConfigSelected .. ".json") then
+                        local ConfigContent = readfile(ConfigsFolder.. ConfigSelected .. ".json")
+                        local Success, Error = Library:LoadConfig(ConfigContent)
+
+                        if Success then
+                            Library:Notification{Name = "loaded config succesfully", Time = 3}
+                        else
+                            Library:Notification{Name = "failed to load config: ".. Error, Time = 3}
+                        end
+                    end
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "save",
+            Callback = function()
+                if ConfigSelected then
+                    if isfile(ConfigsFolder.. ConfigSelected .. ".json") then
+                        local Success, Error = pcall(function()
+                            writefile(ConfigsFolder .. ConfigSelected .. ".json", Library:GetConfig())
+                        end)
+
+                        if Success then
+                            Library:Notification{Name = "saved config succesfully", Time = 3}
+                        else
+                            Library:Notification{Name = "failed to save config: ".. Error, Time = 3}
+                        end
+                    end
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "refresh",
+            Callback = function()
+                Library:GetConfigsList(ConfigsDropdown)
+            end
+        })
+
+        Library:GetConfigsList(ConfigsDropdown)
+    end
+end
+
+do -- theming
+    local ThemingSection = MiscPage:Section({Name = "theming", Side = 1}) do
+        for Index, Value in Library.Theme do
+            ThemingSection:Label({Name = Index}):Colorpicker({
+                Name = Index,
+                Flag = Index,
+                Default = Value,
+                Callback = function(Value)
+                    Library.Theme[Index] = Value
+                    Library:ChangeTheme(Index, Value)
+                end
+            })
+        end
+    end
+end
+
+do -- server
+    local Copy = setclipboard or toclipboard
+
+    local ServerSection = MiscPage:Section({Name = "server", Side = 2}) do
+        ServerSection:Button({
+            Name = "copy server id",
+            Callback = function()
+                if not Copy then
+                    return
+                end
+
+                -- lua code that joins the copied game and server when executed
+                Copy(string.format(
+                    'game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s", game:GetService("Players").LocalPlayer)',
+                    game.PlaceId,
+                    game.JobId
+                ))
+
+                Library:Notification{Name = "copied server join code", Time = 3}
+            end
+        })
+
+        ServerSection:Button({
+            Name = "copy game id",
+            Callback = function()
+                if not Copy then
+                    return
+                end
+
+                Copy(tostring(game.PlaceId))
+
+                Library:Notification{Name = "copied game id", Time = 3}
+            end
+        })
+    end
+end
+
+do -- other
+    local OtherSection = MiscPage:Section({Name = "other", Side = 2}) do
+        OtherSection:Button({
+            Name = "unload",
+            Callback = function()
+                ESP:Unload()
+                Library:Exit()
+            end
+        })
+
+        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.RightShift, Callback = function(Value)
+            Library.MenuKeybind = Library.Flags["uibind"].Key
+        end})
+
+        OtherSection:Dropdown({
+            Name = "animation style",
+            Items = {"Linear", "Quad", "Quart", "Back", "Bounce", "Circular", "Cubic", "Elastic", "Exponential", "Sine", "Quint"},
+            Default = "Cubic",
+            Callback = function(Value)
+                Library.Animation.Style = Value
+            end
+        })
+
+        OtherSection:Dropdown({
+            Name = "animation direction",
+            Items = {"In", "Out", "InOut"},
+            Default = "Out",
+            Callback = function(Value)
+                Library.Animation.Direction = Value
+            end
+        })
+
+        OtherSection:Slider({
+            Name = "animation time",
+            Min = 0,
+            Max = 1,
+            Default = 0.25,
+            Decimals = 0.01,
+            Suffix = "s",
+            Callback = function(Value)
+                Library.Animation.Time = Value
+            end
+        })
+    end
 end
 
 Window:InitWindow()
