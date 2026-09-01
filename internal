@@ -3,13 +3,13 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRi
 local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib"))()
 
 local Window = Library:Window({
-    Name = 'Type<font color="rgb(126, 192, 255)">shit</font><font color="rgb(126, 102, 255)">.cc</font> | developer | Beta',
+    Name = 'Onix<font color="rgb(126, 192, 255)">.lol</font> | developer | lifetime',
     Rank = "developer"
 })
-    
+
 do
     local Watermark = Window:Watermark({
-        Name = "Typeshit.cc Private",
+        Name = "Onix.lol Private",
         SubName = "Project Delta"
     })
 
@@ -27,12 +27,88 @@ do
         Name = "target<font color='rgb(0, 80, 255)'> info</font>"
     })
 
-    TargetIndicator:SetTarget(game:GetService("Players").LocalPlayer)
+    TargetIndicator:SetVisibility(false)
+
+    -- target indicator shows whoever the local player is looking at
+    do
+        local RunService = game:GetService("RunService")
+        local UserInputService = game:GetService("UserInputService")
+        local Players = game:GetService("Players")
+        local LocalPlayer = Players.LocalPlayer
+        local CurrentTarget = nil
+
+        local AimRaycastParams = RaycastParams.new()
+        AimRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        AimRaycastParams.IgnoreWater = true
+
+        local function GetAimTarget()
+            local Camera = workspace.CurrentCamera
+            local Character = LocalPlayer.Character
+
+            if not Camera or not Character then
+                return nil
+            end
+
+            AimRaycastParams.FilterDescendantsInstances = {Character}
+
+            local MouseLocation = UserInputService:GetMouseLocation()
+            local MouseRay = Camera:ViewportPointToRay(MouseLocation.X, MouseLocation.Y)
+            local RayResult = workspace:Raycast(MouseRay.Origin, MouseRay.Direction * 512, AimRaycastParams)
+
+            if not RayResult then
+                return nil
+            end
+
+            if (RayResult.Position - Camera.CFrame.Position).Magnitude / 3.5714285714 > ESP.MaxDistance then
+                return nil
+            end
+
+            local AimInstance = RayResult.Instance
+
+            while AimInstance and AimInstance ~= workspace do
+                local AimPlayer = Players:GetPlayerFromCharacter(AimInstance)
+
+                if AimPlayer and AimPlayer ~= LocalPlayer then
+                    return AimPlayer
+                end
+
+                AimInstance = AimInstance.Parent
+            end
+
+            return nil
+        end
+
+        Library:Connect(RunService.RenderStepped, function()
+            local NewTarget = GetAimTarget()
+
+            if NewTarget ~= CurrentTarget then
+                CurrentTarget = NewTarget
+
+                if NewTarget then
+                    TargetIndicator:SetVisibility(true)
+
+                    task.spawn(function()
+                        -- SetTarget fetches a thumbnail, so keep it off the render step and
+                        -- make sure it is still the current target by the time it resolves
+                        if CurrentTarget == NewTarget then
+                            pcall(function()
+                                TargetIndicator:SetTarget(NewTarget)
+                            end)
+                        end
+                    end)
+                else
+                    -- nothing aimed at: stop the target connections and hide the
+                    -- indicator instead of showing yourself
+                    TargetIndicator:ResetConnection()
+                    TargetIndicator:SetVisibility(false)
+                end
+            end
+        end)
+    end
 end
 
-local AimbotPage = Window:Page({Name = "Aimbot"})
-
 local VisualsPage = Window:Page({Name = "visuals"})
+
 do
     local Main = VisualsPage:Section({Name = "esp", Side = 1})
 
@@ -186,17 +262,27 @@ do
 
     Info:Toggle({
         Name = "weapon text",
+        Flag = "weapon_text",
         Default = ESP.Drawing.Weapons.Enabled,
         Callback = function(Value)
             ESP.Drawing.Weapons.Enabled = Value
+
+            if Value and Library.SetFlags["weapon_icons"] then
+                Library.SetFlags["weapon_icons"](false)
+            end
         end
     })
 
     Info:Toggle({
         Name = "weapon icons",
+        Flag = "weapon_icons",
         Default = ESP.Drawing.Weapons.Icons,
         Callback = function(Value)
             ESP.Drawing.Weapons.Icons = Value
+
+            if Value and Library.SetFlags["weapon_text"] then
+                Library.SetFlags["weapon_text"](false)
+            end
         end
     })
 
@@ -444,11 +530,6 @@ do
         end
     })
 end
-local Movementpage = Window:Page({Name = "Movement"})
-
-
-
-
 
 local MiscPage = Window:Page({Name = "misc"})
 
@@ -652,11 +733,5 @@ do -- other
         })
     end
 end
-
-
-
-
-    
-   
 
 Window:InitWindow()
