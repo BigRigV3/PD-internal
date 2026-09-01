@@ -3,10 +3,10 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRi
 local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib"))()
 
 local Window = Library:Window({
-    Name = 'Typeshit.cc<font color="rgb(126, 192, 255)">.lol</font> | developer | lifetime',
+    Name = 'Typeshit.cc<font color="rgb(126, 192, 255)">.lol</font> | developer | Beta',
     Rank = "developer"
 })
-
+    
 do
     local Watermark = Window:Watermark({
         Name = "Typeshit.cc Private",
@@ -29,6 +29,8 @@ do
 
     TargetIndicator:SetTarget(game:GetService("Players").LocalPlayer)
 end
+
+local AimbotPage = Window:Page({Name = "Aimbot"})
 
 local VisualsPage = Window:Page({Name = "visuals"})
 do
@@ -442,6 +444,11 @@ do
         end
     })
 end
+local Movementpage = Window:Page({Name = "Movement"})
+
+
+
+
 
 local MiscPage = Window:Page({Name = "misc"})
 
@@ -646,7 +653,7 @@ do -- other
     end
 end
 
-local Movementpage = Window:Page({Name = "Movement"})
+
 
 
     
