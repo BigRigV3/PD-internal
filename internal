@@ -52,6 +52,8 @@ local Window = Library:Window({
 local AimbotFOVEnabled = true
 local AimbotFOVRadius = 120
 local TargetIndicator
+local ResetTargetStatsConnection
+local SetTargetStats
 local Watermark
 local KeybindList
 local StaffList
@@ -177,10 +179,77 @@ do
 
     TargetIndicator:SetVisibility(false)
 
+    -- The replicated player folder contains the useful target-only stats. Put
+    -- them in the existing status row so this works with the loaded UI library.
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local RunService = game:GetService("RunService")
+    local TargetStatsConnection
+    local TargetStatsRefresh = 0
+
+    ResetTargetStatsConnection = function()
+        if TargetStatsConnection then
+            TargetStatsConnection:Disconnect()
+            TargetStatsConnection = nil
+        end
+
+        TargetIndicator:SetStatus("targeting")
+    end
+
+    local function ReadTargetStats(Target)
+        local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+        local ReplicatedPlayer = PlayerFolder and PlayerFolder:FindFirstChild(Target.Name)
+        local Status = ReplicatedPlayer and ReplicatedPlayer:FindFirstChild("Status")
+        local Journey = Status and Status:FindFirstChild("Journey")
+        local Statistics = Journey and Journey:FindFirstChild("Statistics")
+        local UAC = Status and Status:FindFirstChild("UAC")
+        local Reports = UAC and UAC:FindFirstChild("Reports")
+
+        local Kills = Statistics and tonumber(Statistics:GetAttribute("Kills"))
+        local Deaths = Statistics and tonumber(Statistics:GetAttribute("Deaths"))
+        local StatisticsText = "--"
+        if Kills ~= nil and Deaths ~= nil then
+            local Ratio = Deaths == 0 and Kills or Kills / Deaths
+            StatisticsText = string.format("%d/%d (%.2f)", Kills, Deaths, Ratio)
+        end
+
+        local ReportAmount = Reports and tonumber(Reports:GetAttribute("Amount"))
+        if ReportAmount == nil and Reports then
+            ReportAmount = 0
+            for AttributeName, Value in pairs(Reports:GetAttributes()) do
+                if tonumber(AttributeName) ~= nil and type(Value) == "number" then
+                    ReportAmount = ReportAmount + Value
+                end
+            end
+        end
+
+        local ReportsText = ReportAmount ~= nil and string.format("%d", ReportAmount) or "--"
+        TargetIndicator:SetStatus("Statistics: " .. StatisticsText .. " | Reports: " .. ReportsText)
+    end
+
+    SetTargetStats = function(Target)
+        ResetTargetStatsConnection()
+        ReadTargetStats(Target)
+
+        TargetStatsRefresh = 0
+        TargetStatsConnection = RunService.RenderStepped:Connect(function(DeltaTime)
+            if CurrentTarget ~= Target then
+                ResetTargetStatsConnection()
+                return
+            end
+
+            TargetStatsRefresh = TargetStatsRefresh + DeltaTime
+            if TargetStatsRefresh < 0.25 then
+                return
+            end
+
+            TargetStatsRefresh = 0
+            ReadTargetStats(Target)
+        end)
+    end
+
     -- Target indicator follows the closest player inside the aimbot FOV.
     -- This is target selection/visualization only; no aim or camera logic is performed.
     do
-        local RunService = game:GetService("RunService")
         local UserInputService = game:GetService("UserInputService")
         local Players = game:GetService("Players")
         local LocalPlayer = Players.LocalPlayer
@@ -266,10 +335,12 @@ do
             local NewTarget = GetAimTarget()
 
             if NewTarget ~= CurrentTarget then
+                ResetTargetStatsConnection()
                 CurrentTarget = NewTarget
 
                 if NewTarget then
                     TargetIndicator:SetVisibility(TargetIndicatorEnabled)
+                    SetTargetStats(NewTarget)
 
                     task.spawn(function()
                         -- SetTarget fetches a thumbnail, so keep it off the render step and
@@ -348,6 +419,7 @@ local function UnloadAll()
     if TargetIndicator then
         pcall(function()
             TargetIndicator:ResetConnection()
+            ResetTargetStatsConnection()
             TargetIndicator:SetVisibility(false)
         end)
     end
@@ -892,10 +964,12 @@ do -- ui elements
                 if TargetIndicator then
                     TargetIndicator:ResetConnection()
                 end
+                ResetTargetStatsConnection()
             elseif CurrentTarget then
                 pcall(function()
                     TargetIndicator:SetTarget(CurrentTarget)
                 end)
+                SetTargetStats(CurrentTarget)
             end
 
             SetElementVisibility(TargetIndicator, "TargetIndicator", Value and CurrentTarget ~= nil)
