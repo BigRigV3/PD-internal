@@ -1,6 +1,6 @@
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/uilib?token=GHSAT0AAAAAAEHM5ZHFVDKYCWORZ4PWVNAW2UWFEFQ"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/uilib"))()
 -- esp is whats in  d
-local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib?token=GHSAT0AAAAAAEHM5ZHEYKB4KWQ6MDXESI4A2UWFD5Q"))()
+local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib"))()
 
 local Window = Library:Window({
     Name = 'Typeshit.cc<font color="rgb(126, 192, 255)">.lol</font> | developer | lifetime',
@@ -31,7 +31,6 @@ do
 end
 
 local VisualsPage = Window:Page({Name = "visuals"})
-
 do
     local Main = VisualsPage:Section({Name = "esp", Side = 1})
 
@@ -646,5 +645,11 @@ do -- other
         })
     end
 end
+
+local Movementpage = Window:Page({Name = "Movement"})
+
+
+    
+   
 
 Window:InitWindow()
