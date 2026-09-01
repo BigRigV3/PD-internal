@@ -1,3 +1,10 @@
+local BootstrapEnvironment = getgenv()
+if BootstrapEnvironment.TypeshitCleanup then
+    local PreviousCleanup = BootstrapEnvironment.TypeshitCleanup
+    BootstrapEnvironment.TypeshitCleanup = nil
+    pcall(PreviousCleanup)
+end
+
 local function LoadScript(Url)
     local Source = nil
 
@@ -50,18 +57,74 @@ local Window = Library:Window({
 local AimbotFOVEnabled = true
 local AimbotFOVRadius = 120
 local TargetIndicator
+local Watermark
+local KeybindList
+local StaffList
+local CurrentTarget
+local TargetIndicatorEnabled = true
+local FOVCircle
+local FOVCircleVisible = true
+local Environment = getgenv()
+
+local function RemoveDrawingObject(Object)
+    if not Object then
+        return
+    end
+
+    pcall(function()
+        Object.Visible = false
+    end)
+    pcall(function()
+        Object:Remove()
+    end)
+    pcall(function()
+        Object:Destroy()
+    end)
+end
+
+local function RemoveFOVCircles()
+    RemoveDrawingObject(FOVCircle)
+    RemoveDrawingObject(Environment.TypeshitFOVCircle)
+
+    if ESP and type(ESP.Fovcircle) == "table" then
+        for _, Circle in pairs(ESP.Fovcircle) do
+            RemoveDrawingObject(Circle)
+        end
+        table.clear(ESP.Fovcircle)
+    end
+
+    FOVCircle = nil
+    Environment.TypeshitFOVCircle = nil
+end
+
+-- Remove a circle left behind by an earlier execution of this script.
+RemoveFOVCircles()
+
+local function SetFOVCircleVisible(Value)
+    FOVCircleVisible = Value == true
+
+    if FOVCircle then
+        local Success = pcall(function()
+            FOVCircle.Visible = FOVCircleVisible
+        end)
+
+        if not Success then
+            RemoveFOVCircles()
+        end
+    end
+end
 
 do
-    local Watermark = Window:Watermark({
+    Watermark = Window:Watermark({
         Name = "Typeshit.cc Private",
         SubName = "Project Delta"
     })
 
-    local KeybindList = Window:KeybindList({
+    KeybindList = Window:KeybindList({
         Name = 'hot<font color="rgb(126, 192, 255)">keys</font>'
     })
 
-    local StaffList = Window:StaffList({
+    StaffList = Window:StaffList({
         Name = 'staff<font color="rgb(0, 80, 255)"> list</font>'
     })
 
@@ -80,16 +143,29 @@ do
         local UserInputService = game:GetService("UserInputService")
         local Players = game:GetService("Players")
         local LocalPlayer = Players.LocalPlayer
-        local CurrentTarget = nil
-        local FOVCircle = Drawing and Drawing.new and Drawing.new("Circle")
-        if FOVCircle then
-            FOVCircle.Filled = false
-            FOVCircle.NumSides = 64
-            FOVCircle.Thickness = 1
-            FOVCircle.Color = Color3.fromRGB(126, 192, 255)
-            FOVCircle.Transparency = 0.9
-            FOVCircle.Visible = true
-        end
+        CurrentTarget = nil
+        FOVCircle = Instance.new("Frame")
+        FOVCircle.Name = "TypeshitFOVCircle"
+        FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+        FOVCircle.BackgroundTransparency = 1
+        FOVCircle.BorderSizePixel = 0
+        FOVCircle.Size = UDim2.fromOffset(AimbotFOVRadius * 2, AimbotFOVRadius * 2)
+        FOVCircle.ZIndex = 100
+        FOVCircle.Parent = Library.Holder.Instance
+
+        local CircleCorner = Instance.new("UICorner")
+        CircleCorner.CornerRadius = UDim.new(1, 0)
+        CircleCorner.Parent = FOVCircle
+
+        local CircleStroke = Instance.new("UIStroke")
+        CircleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        CircleStroke.Color = Color3.fromRGB(126, 192, 255)
+        CircleStroke.Thickness = 1
+        CircleStroke.Transparency = 0.1
+        CircleStroke.Parent = FOVCircle
+
+        Environment.TypeshitFOVCircle = FOVCircle
+        SetFOVCircleVisible(FOVCircleVisible)
 
         local AimRaycastParams = RaycastParams.new()
         AimRaycastParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -112,11 +188,21 @@ do
                     local Root = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
                     local Humanoid = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
                     if Root and Humanoid and Humanoid.Health > 0 then
-                        local Point, OnScreen = Camera:WorldToViewportPoint(Root.Position)
-                        local Distance = (Vector2.new(Point.X, Point.Y) - MouseLocation).Magnitude
-                        local WorldDistance = (Camera.CFrame.Position - Root.Position).Magnitude / 3.5714285714
-                        if OnScreen and Distance <= BestDistance and WorldDistance <= ESP.MaxDistance then
-                            BestTarget, BestDistance = Player, Distance
+                        -- Refresh the camera reference immediately before the
+                        -- projection; it can be replaced during respawn/cutscenes.
+                        local CurrentCamera = workspace.CurrentCamera
+                        local Projected, Point, OnScreen = false, nil, false
+                        if CurrentCamera then
+                            Projected, Point, OnScreen = pcall(function()
+                                return CurrentCamera:WorldToViewportPoint(Root.Position)
+                            end)
+                        end
+                        if Projected and Point and CurrentCamera then
+                            local Distance = (Vector2.new(Point.X, Point.Y) - MouseLocation).Magnitude
+                            local WorldDistance = (CurrentCamera.CFrame.Position - Root.Position).Magnitude / 3.5714285714
+                            if OnScreen and Distance <= BestDistance and WorldDistance <= ESP.MaxDistance then
+                                BestTarget, BestDistance = Player, Distance
+                            end
                         end
                     end
                 end
@@ -127,9 +213,16 @@ do
 
         Library:Connect(RunService.RenderStepped, function()
             if FOVCircle then
-                FOVCircle.Position = UserInputService:GetMouseLocation()
-                FOVCircle.Radius = AimbotFOVRadius
-                FOVCircle.Visible = AimbotFOVEnabled
+                local Success = pcall(function()
+                    local MouseLocation = UserInputService:GetMouseLocation()
+                    FOVCircle.Position = UDim2.fromOffset(MouseLocation.X, MouseLocation.Y)
+                    FOVCircle.Size = UDim2.fromOffset(AimbotFOVRadius * 2, AimbotFOVRadius * 2)
+                    FOVCircle.Visible = FOVCircleVisible
+                end)
+
+                if not Success then
+                    RemoveFOVCircles()
+                end
             end
             local NewTarget = GetAimTarget()
 
@@ -137,7 +230,7 @@ do
                 CurrentTarget = NewTarget
 
                 if NewTarget then
-                    TargetIndicator:SetVisibility(true)
+                    TargetIndicator:SetVisibility(TargetIndicatorEnabled)
 
                     task.spawn(function()
                         -- SetTarget fetches a thumbnail, so keep it off the render step and
@@ -158,6 +251,35 @@ do
         end)
     end
 end
+
+local Unloading = false
+local function UnloadAll()
+    if Unloading then
+        return
+    end
+
+    Unloading = true
+    Environment.TypeshitCleanup = nil
+    AimbotFOVEnabled = false
+    SetFOVCircleVisible(false)
+    RemoveFOVCircles()
+
+    if TargetIndicator then
+        pcall(function()
+            TargetIndicator:ResetConnection()
+            TargetIndicator:SetVisibility(false)
+        end)
+    end
+
+    pcall(function()
+        ESP:Unload()
+    end)
+    pcall(function()
+        Library:Exit()
+    end)
+end
+
+Environment.TypeshitCleanup = UnloadAll
 
 local AimbotPage = Window:Page({Name = "aimbot"})
 local VisualsPage = Window:Page({Name = "visuals"})
@@ -591,11 +713,7 @@ do
         Name = "aimbot fov",
         Default = true,
         Callback = function(Value)
-            AimbotFOVEnabled = Value
-            if not Value and TargetIndicator then
-                TargetIndicator:ResetConnection()
-                TargetIndicator:SetVisibility(false)
-            end
+            SetFOVCircleVisible(Value)
         end
     })
 
@@ -608,6 +726,64 @@ do
         Suffix = "px",
         Callback = function(Value)
             AimbotFOVRadius = Value
+        end
+    })
+end
+
+local UIPage = Window:Page({Name = "ui"})
+
+do -- ui elements
+    local ElementsSection = UIPage:Section({Name = "elements", Side = 1})
+
+    local function SetElementVisibility(Element, ItemName, Value)
+        if Element and Element.Items and Element.Items[ItemName] then
+            Element.Items[ItemName].Instance.Visible = Value
+        end
+    end
+
+    ElementsSection:Toggle({
+        Name = "watermark",
+        Flag = "ui_watermark",
+        Default = true,
+        Callback = function(Value)
+            SetElementVisibility(Watermark, "Watermark", Value)
+        end
+    })
+
+    ElementsSection:Toggle({
+        Name = "hotkeys list",
+        Flag = "ui_hotkeys",
+        Default = true,
+        Callback = function(Value)
+            SetElementVisibility(KeybindList, "KeybindList", Value)
+        end
+    })
+
+    ElementsSection:Toggle({
+        Name = "staff list",
+        Flag = "ui_staff_list",
+        Default = true,
+        Callback = function(Value)
+            SetElementVisibility(StaffList, "StaffList", Value)
+        end
+    })
+
+    ElementsSection:Toggle({
+        Name = "target viewer",
+        Flag = "ui_target_viewer",
+        Default = true,
+        Callback = function(Value)
+            TargetIndicatorEnabled = Value
+
+            if not Value then
+                TargetIndicator:ResetConnection()
+            elseif CurrentTarget then
+                pcall(function()
+                    TargetIndicator:SetTarget(CurrentTarget)
+                end)
+            end
+
+            SetElementVisibility(TargetIndicator, "TargetIndicator", Value and CurrentTarget ~= nil)
         end
     })
 end
@@ -717,7 +893,7 @@ do -- configs
 end
 
 do -- theming
-    local ThemingSection = MiscPage:Section({Name = "theming", Side = 1}) do
+    local ThemingSection = UIPage:Section({Name = "theme colors", Side = 2}) do
         for Index, Value in Library.Theme do
             ThemingSection:Label({Name = Index}):Colorpicker({
                 Name = Index,
@@ -734,8 +910,23 @@ end
 
 do -- server
     local Copy = setclipboard or toclipboard
+    local TeleportService = game:GetService("TeleportService")
+    local Players = game:GetService("Players")
 
     local ServerSection = MiscPage:Section({Name = "server", Side = 2}) do
+        ServerSection:Button({
+            Name = "rejoin",
+            Callback = function()
+                local LocalPlayer = Players.LocalPlayer
+
+                if #Players:GetPlayers() <= 1 then
+                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                else
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                end
+            end
+        })
+
         ServerSection:Button({
             Name = "copy server id",
             Callback = function()
@@ -774,16 +965,15 @@ do -- other
         OtherSection:Button({
             Name = "unload",
             Callback = function()
-                AimbotFOVEnabled = false
-                TargetIndicator:ResetConnection()
-                TargetIndicator:SetVisibility(false)
-                ESP:Unload()
-                Library:Exit()
+                UnloadAll()
             end
         })
 
         OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.RightShift, Callback = function(Value)
-            Library.MenuKeybind = Library.Flags["uibind"].Key
+            local BindState = Library.Flags["uibind"]
+            if BindState and BindState.Key then
+                Library.MenuKeybind = BindState.Key
+            end
         end})
 
         OtherSection:Dropdown({
