@@ -43,12 +43,13 @@ local Library = LoadScript("https://raw.githubusercontent.com/BigRigV3/PD-intern
 local ESP = LoadScript("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib")
 
 local Window = Library:Window({
-    Name = 'Type<font color="rgb(126, 192, 255)">shit</font><font color="rgb(126, 102, 255)">.cc</font> | developer | Beta',,
+    Name = 'Type<font color="rgb(126, 192, 255)">shit</font><font color="rgb(126, 102, 255)">.cc</font> | developer | Beta',
     Rank = "developer"
 })
 
 local AimbotFOVEnabled = true
 local AimbotFOVRadius = 120
+local TargetIndicator
 
 do
     local Watermark = Window:Watermark({
@@ -66,7 +67,7 @@ do
 
     StaffList:Add("Bigrig", "owner/dev")
 
-    local TargetIndicator = Window:TargetIndicator({
+    TargetIndicator = Window:TargetIndicator({
         Name = "target<font color='rgb(0, 80, 255)'> info</font>"
     })
 
@@ -158,6 +159,7 @@ do
     end
 end
 
+local AimbotPage = Window:Page({Name = "aimbot"})
 local VisualsPage = Window:Page({Name = "visuals"})
 
 do
@@ -582,8 +584,6 @@ do
     })
 end
 
-local AimbotPage = Window:Page({Name = "aimbot"})
-
 do
     local FOVSection = AimbotPage:Section({Name = "fov", Side = 1})
 
@@ -592,6 +592,10 @@ do
         Default = true,
         Callback = function(Value)
             AimbotFOVEnabled = Value
+            if not Value and TargetIndicator then
+                TargetIndicator:ResetConnection()
+                TargetIndicator:SetVisibility(false)
+            end
         end
     })
 
@@ -770,6 +774,9 @@ do -- other
         OtherSection:Button({
             Name = "unload",
             Callback = function()
+                AimbotFOVEnabled = false
+                TargetIndicator:ResetConnection()
+                TargetIndicator:SetVisibility(false)
                 ESP:Unload()
                 Library:Exit()
             end
