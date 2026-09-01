@@ -24,16 +24,11 @@ local function LoadScript(Url)
 
     assert(Source, "failed to download " .. Url)
 
-    -- The remote esp lib may contain an older copy followed by the newer copy
-    -- (`return ESPpcall(...)`). Prefer the newer module when that duplicate is
-    -- present; clean single-copy files are left unchanged.
+    -- The remote esp lib can contain a second, stale copy after the first
+    -- `return ESP`. Always execute the first complete copy.
     if string.find(Url, "/esplib$") then
         local FirstReturn = string.find(Source, "\nreturn ESP")
-        local NewCopy = FirstReturn and string.find(Source, "pcall(function()", FirstReturn + 1)
-
-        if NewCopy then
-            Source = string.sub(Source, NewCopy)
-        elseif FirstReturn then
+        if FirstReturn then
             Source = string.sub(Source, 1, FirstReturn + #"\nreturn ESP" - 1)
         end
     end
@@ -447,6 +442,14 @@ do
     })
 
     Boxes:Toggle({
+        Name = "box outline",
+        Default = ESP.Drawing.Boxes.Full.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Full.Enabled = Value
+        end
+    })
+
+    Boxes:Toggle({
         Name = "filled box",
         Default = ESP.Drawing.Boxes.Filled.Enabled,
         Callback = function(Value)
@@ -517,6 +520,14 @@ do
         Default = ESP.Drawing.Distances.Enabled,
         Callback = function(Value)
             ESP.Drawing.Distances.Enabled = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "flags",
+        Default = ESP.Drawing.Flags.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Flags.Enabled = Value
         end
     })
 
@@ -631,7 +642,9 @@ do
         Items = {"occluded", "always on top"},
         Default = ESP.Drawing.Chams.VisibleCheck and "occluded" or "always on top",
         Callback = function(Value)
-            ESP.Drawing.Chams.VisibleCheck = Value == "occluded"
+            local Occluded = Value == "occluded"
+            ESP.Drawing.Chams.VisibleCheck = Occluded
+            ESP.Drawing.Chams.Mode = Occluded and "VisibleOnly" or "VisibleAndHidden"
         end
     })
 
