@@ -871,8 +871,11 @@ do -- Initalize
                                 w, h = 3 * scaleFactor, 4.5 * scaleFactor
                             end
 
-                            -- Small clearance around the complete fitted model.
-                            w, h = w + 12, h + 12
+                            -- Keep the bottom edge fixed while shortening the top
+                            -- edge by 5 pixels.
+                            w = w + 12
+                            h = h + 7
+                            Pos = Vector2.new(Pos.X, Pos.Y + 2.5)
                         end
 
                         -- Fade-out effect --
