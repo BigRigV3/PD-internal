@@ -831,7 +831,9 @@ do -- Initalize
                             local MaxX, MaxY = -math.huge, -math.huge
                             local Projected = false
 
-                            for _, Part in pairs(plr.Character:GetChildren()) do
+                            -- Rigs can store body/accessory parts in nested models.
+                            -- Include all descendants so the vertical bounds are complete.
+                            for _, Part in pairs(plr.Character:GetDescendants()) do
                                 if Part:IsA("BasePart") and Part.Transparency < 1 then
                                     local PartCFrame = Part.CFrame
                                     local Half = Part.Size / 2
@@ -869,7 +871,7 @@ do -- Initalize
                                 w, h = 3 * scaleFactor, 4.5 * scaleFactor
                             end
 
-                            -- 6 pixel padding on every side of the snug bounds
+                            -- Small clearance around the complete fitted model.
                             w, h = w + 12, h + 12
                         end
 
@@ -1211,6 +1213,7 @@ end
 
 getgenv().OnixESP = ESP
 return ESP
+--[=[ Duplicate copy accidentally appended below.
 pcall(function()
     if getgenv().OnixESP and getgenv().OnixESP.Unload then
         getgenv().OnixESP:Unload()
@@ -2421,3 +2424,4 @@ end
 
 getgenv().OnixESP = ESP
 return ESP
+]=]
