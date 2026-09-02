@@ -11,6 +11,7 @@ local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game
 local ESP = {
     Enabled = true,
     TeamCheck = false,
+    SelfCheck = false,
     MaxDistance = 200,
     UpdateRate = 15,
     FontSize = 11,
@@ -495,6 +496,48 @@ do
         return _Instance;
     end
     --
+    function Functions:GetCharacter(Player)
+        local Characters = Workspace:FindFirstChild("Characters")
+        if not Characters then
+            return nil
+        end
+
+        return Characters:FindFirstChild(Player.Name)
+            or Characters:FindFirstChild(Player.Name, true)
+    end
+
+    function Functions:GetCharacterTeam(Player)
+        local Characters = Workspace:FindFirstChild("Characters")
+        if not Characters then
+            return nil
+        end
+
+        local Character = Functions:GetCharacter(Player)
+        local Terrorists = Characters:FindFirstChild("Terrorists")
+        local CounterTerrorists = Characters:FindFirstChild("Counter-Terrorists")
+
+        if Character and Terrorists and Character:IsDescendantOf(Terrorists) then
+            return "Terrorists"
+        end
+
+        if Character and CounterTerrorists and Character:IsDescendantOf(CounterTerrorists) then
+            return "Counter-Terrorists"
+        end
+
+        return nil
+    end
+
+    function Functions:IsSameTeam(LeftPlayer, RightPlayer)
+        local LeftTeam = Functions:GetCharacterTeam(LeftPlayer)
+        local RightTeam = Functions:GetCharacterTeam(RightPlayer)
+
+        if LeftTeam and RightTeam then
+            return LeftTeam == RightTeam
+        end
+
+        return LeftPlayer.Team ~= nil and LeftPlayer.Team == RightPlayer.Team
+    end
+
     function Functions:GetReplicatedPlayer(Player)
         local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
         return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
@@ -1001,7 +1044,7 @@ do -- Initalize
                     end         
                 end]]
                 --
-                local Character = plr.Character
+                local Character = Functions:GetCharacter(plr)
                 local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
                 local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
 
@@ -1087,8 +1130,8 @@ do -- Initalize
                         end
 
                         -- Teamcheck
-                        local IsValidTarget = plr ~= lplayer
-                            and (not ESP.TeamCheck or ((lplayer.Team ~= plr.Team and plr.Team) or (not lplayer.Team and not plr.Team)))
+                        local IsValidTarget = (ESP.SelfCheck or plr ~= lplayer)
+                            and (not ESP.TeamCheck or not Functions:IsSameTeam(lplayer, plr))
                             and Character
                             and HRP
                             and Humanoid
@@ -1636,6 +1679,7 @@ local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game
 local ESP = {
     Enabled = true,
     TeamCheck = false,
+    SelfCheck = false,
     MaxDistance = 200,
     FontSize = 11,
     FadeOut = {
@@ -2109,6 +2153,48 @@ do
         return _Instance;
     end
     --
+    function Functions:GetCharacter(Player)
+        local Characters = Workspace:FindFirstChild("Characters")
+        if not Characters then
+            return nil
+        end
+
+        return Characters:FindFirstChild(Player.Name)
+            or Characters:FindFirstChild(Player.Name, true)
+    end
+
+    function Functions:GetCharacterTeam(Player)
+        local Characters = Workspace:FindFirstChild("Characters")
+        if not Characters then
+            return nil
+        end
+
+        local Character = Functions:GetCharacter(Player)
+        local Terrorists = Characters:FindFirstChild("Terrorists")
+        local CounterTerrorists = Characters:FindFirstChild("Counter-Terrorists")
+
+        if Character and Terrorists and Character:IsDescendantOf(Terrorists) then
+            return "Terrorists"
+        end
+
+        if Character and CounterTerrorists and Character:IsDescendantOf(CounterTerrorists) then
+            return "Counter-Terrorists"
+        end
+
+        return nil
+    end
+
+    function Functions:IsSameTeam(LeftPlayer, RightPlayer)
+        local LeftTeam = Functions:GetCharacterTeam(LeftPlayer)
+        local RightTeam = Functions:GetCharacterTeam(RightPlayer)
+
+        if LeftTeam and RightTeam then
+            return LeftTeam == RightTeam
+        end
+
+        return LeftPlayer.Team ~= nil and LeftPlayer.Team == RightPlayer.Team
+    end
+
     function Functions:GetReplicatedPlayer(Player)
         local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
         return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
@@ -2541,7 +2627,7 @@ do -- Initalize
                     end         
                 end]]
                 --
-                local Character = plr.Character
+                local Character = Functions:GetCharacter(plr)
                 local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
                 local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
 
@@ -2631,8 +2717,8 @@ do -- Initalize
                         end
 
                         -- Teamcheck
-                        local IsValidTarget = plr ~= lplayer
-                            and (not ESP.TeamCheck or ((lplayer.Team ~= plr.Team and plr.Team) or (not lplayer.Team and not plr.Team)))
+                        local IsValidTarget = (ESP.SelfCheck or plr ~= lplayer)
+                            and (not ESP.TeamCheck or not Functions:IsSameTeam(lplayer, plr))
                             and Character
                             and HRP
                             and Humanoid
