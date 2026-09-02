@@ -1,0 +1,2246 @@
+local BootstrapEnvironment = getgenv()
+if BootstrapEnvironment.TypeshitCleanup then
+    local PreviousCleanup = BootstrapEnvironment.TypeshitCleanup
+    BootstrapEnvironment.TypeshitCleanup = nil
+    pcall(PreviousCleanup)
+end
+
+local function LoadScript(Url)
+    local Source
+    for _ = 1, 3 do
+        local Ok, Result = pcall(function()
+            return game:HttpGet(Url)
+        end)
+        if Ok and type(Result) == "string" and #Result > 0 and not string.find(Result, "^%d%d%d: " ) then
+            Source = Result
+            break
+        end
+        task.wait(1)
+    end
+    assert(Source, "failed to download " .. Url)
+    if string.find(Url, "/esplib$") then
+        local FirstReturn = string.find(Source, "\nreturn ESP")
+        if FirstReturn then
+            Source = string.sub(Source, 1, FirstReturn + #"\nreturn ESP" - 1)
+        end
+    end
+    local Chunk, Error = loadstring(Source)
+    assert(Chunk, "failed to compile " .. Url .. ": " .. tostring(Error))
+    return Chunk()
+end
+
+local Library = LoadScript("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/Uilib")
+local ESP = LoadScript("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/esplib")
+local Window = Library:Window({
+    Name = "Zombie game",
+    Rank = "developer"
+})
+
+local Environment = getgenv()
+local Unloading = false
+local AntiAimEnabled = false
+local AntiAimUnderground = false
+local AntiAimMode = "Reverse"
+local AntiAimYawOffset = 0
+local AntiAimPitch = 0
+local AntiAimUndergroundDepth = 3
+local SilentAimTargetPart
+local SelfChamsEnabled = false
+local ArmChamsEnabled = false
+local SelfChamsColor = Color3.fromRGB(126, 192, 255)
+local ArmChamsColor = Color3.fromRGB(126, 192, 255)
+local ClearLocalChams
+local FreecamEnabled = false
+local FreecamSpeed = 50
+local FreecamPosition
+local FreecamPitch = 0
+local FreecamYaw = 0
+local FreecamCameraType
+local FreecamCameraSubject
+local FreecamMouseBehavior
+local FreecamReplicationFocus
+local SetFreecamEnabled
+local UpdateFreecam
+local FreecamBound = false
+local FreecamRenderConnection
+local ThirdPersonEnabled = false
+local ThirdPersonDistance = 8
+local ThirdPersonCameraMode
+local ThirdPersonMinZoomDistance
+local ThirdPersonMaxZoomDistance
+local ThirdPersonMouseLock
+local SetThirdPersonEnabled
+local SkinChangerEnabled = false
+local ApplySkinSelections
+local UnlockAllSkinsEnabled = false
+local UnlockAllSkinsStarted = false
+local ZombieESPEnabled = false
+local ZombieNametags = {}
+
+local function RemoveZombieNametag(Zombie)
+    local Nametag = ZombieNametags[Zombie]
+    if not Nametag then
+        return
+    end
+
+    pcall(function()
+        Nametag.Visible = false
+        Nametag:Remove()
+    end)
+    ZombieNametags[Zombie] = nil
+end
+
+local function ClearZombieESP()
+    for Zombie in pairs(ZombieNametags) do
+        RemoveZombieNametag(Zombie)
+    end
+end
+
+local function GetZombieNametagPosition(Zombie)
+    if Zombie:IsA("Model") then
+        local Head = Zombie:FindFirstChild("Head", true)
+        if Head and Head:IsA("BasePart") then
+            return Head.Position + Vector3.new(0, 2.5, 0)
+        end
+
+        local Success, BoxCFrame, BoxSize = pcall(function()
+            return Zombie:GetBoundingBox()
+        end)
+        if Success and BoxCFrame and BoxSize then
+            return BoxCFrame.Position + Vector3.new(0, BoxSize.Y / 2 + 1.5, 0)
+        end
+    elseif Zombie:IsA("BasePart") then
+        return Zombie.Position + Vector3.new(0, Zombie.Size.Y / 2 + 1.5, 0)
+    end
+
+    return nil
+end
+
+local function GetZombieNametag(Zombie)
+    local Nametag = ZombieNametags[Zombie]
+    if Nametag then
+        return Nametag
+    end
+
+    local Success, NewNametag = pcall(function()
+        return Drawing.new("Text")
+    end)
+    if not Success or not NewNametag then
+        return nil
+    end
+
+    NewNametag.Center = true
+    NewNametag.Outline = true
+    NewNametag.OutlineColor = Color3.fromRGB(0, 0, 0)
+    NewNametag.Size = 13
+    NewNametag.Color = Color3.fromRGB(255, 110, 110)
+    NewNametag.Visible = false
+    ZombieNametags[Zombie] = NewNametag
+    return NewNametag
+end
+
+local function UpdateZombieESP()
+    local Camera = workspace.CurrentCamera
+    local ZombiesFolder = workspace:FindFirstChild("Zombies")
+    local ActiveZombies = {}
+
+    if ZombieESPEnabled and Camera and ZombiesFolder then
+        for _, Zombie in ipairs(ZombiesFolder:GetChildren()) do
+            local Position = GetZombieNametagPosition(Zombie)
+            if Position then
+                local Nametag = GetZombieNametag(Zombie)
+                if Nametag then
+                    local ScreenPosition, OnScreen = Camera:WorldToViewportPoint(Position)
+                    Nametag.Text = Zombie.Name
+                    Nametag.Position = Vector2.new(ScreenPosition.X, ScreenPosition.Y)
+                    Nametag.Visible = OnScreen and ScreenPosition.Z > 0
+                    ActiveZombies[Zombie] = true
+                end
+            end
+        end
+    end
+
+    for Zombie in pairs(ZombieNametags) do
+        if not ActiveZombies[Zombie] then
+            RemoveZombieNametag(Zombie)
+        end
+    end
+end
+
+local function SetZombieESPEnabled(Value)
+    ZombieESPEnabled = Value == true
+    if not ZombieESPEnabled then
+        ClearZombieESP()
+        return
+    end
+
+    UpdateZombieESP()
+end
+
+Library:Connect(game:GetService("RunService").RenderStepped, UpdateZombieESP)
+
+local VisualsPage = Window:Page({Name = "visuals"})
+
+do
+    local Main = VisualsPage:Section({Name = "esp", Side = 1})
+
+    Main:Toggle({
+        Name = "master esp",
+        Flag = "esp_enabled",
+        Default = ESP.Enabled,
+        Callback = function(Value)
+            ESP.Enabled = Value
+        end
+    })
+
+    Main:Toggle({
+        Name = "zombie esp",
+        Flag = "zombie_esp",
+        Default = false,
+        Callback = function(Value)
+            SetZombieESPEnabled(Value)
+        end
+    })
+
+    Main:Toggle({
+        Name = "team check",
+        Flag = "esp_team_check",
+        Default = ESP.TeamCheck,
+        Callback = function(Value)
+            ESP.TeamCheck = Value
+        end
+    })
+
+    Main:Toggle({
+        Name = "fade on distance",
+        Flag = "esp_fade_distance",
+        Default = ESP.FadeOut.OnDistance,
+        Callback = function(Value)
+            ESP.FadeOut.OnDistance = Value
+        end
+    })
+
+    Main:Toggle({
+        Name = "friend tag",
+        Flag = "esp_friend_tag",
+        Default = ESP.Options.Friendcheck,
+        Callback = function(Value)
+            ESP.Options.Friendcheck = Value
+        end
+    })
+
+    Main:Slider({
+        Name = "max distance",
+        Flag = "esp_max_distance",
+        Min = 50,
+        Max = 1000,
+        Default = ESP.MaxDistance,
+        Decimals = 1,
+        Suffix = "m",
+        Callback = function(Value)
+            ESP.MaxDistance = Value
+        end
+    })
+
+    Main:Slider({
+        Name = "esp update rate",
+        Flag = "esp_update_rate",
+        Min = 10,
+        Max = 30,
+        Default = ESP.UpdateRate,
+        Decimals = 1,
+        Suffix = "hz",
+        Callback = function(Value)
+            ESP.UpdateRate = Value
+        end
+    })
+
+    Main:Slider({
+        Name = "font size",
+        Flag = "esp_font_size",
+        Min = 8,
+        Max = 20,
+        Default = ESP.FontSize,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.FontSize = Value
+        end
+    })
+
+    local Boxes = VisualsPage:Section({Name = "boxes", Side = 1})
+
+    Boxes:Toggle({
+        Name = "corner box",
+        Flag = "esp_corner_box",
+        Default = ESP.Drawing.Boxes.Corner.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Corner.Enabled = Value
+        end
+    })
+
+    Boxes:Toggle({
+        Name = "box outline",
+        Flag = "esp_box_outline",
+        Default = ESP.Drawing.Boxes.Full.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Full.Enabled = Value
+        end
+    })
+
+    Boxes:Toggle({
+        Name = "filled box",
+        Flag = "esp_filled_box",
+        Default = ESP.Drawing.Boxes.Filled.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.Enabled = Value
+        end
+    })
+
+    Boxes:Dropdown({
+        Name = "outline mode",
+        Flag = "esp_box_outline_mode",
+        Items = {"solid", "gradient"},
+        Default = ESP.Drawing.Boxes.Gradient and "gradient" or "solid",
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Gradient = Value == "gradient"
+        end
+    })
+
+    Boxes:Dropdown({
+        Name = "fill mode",
+        Flag = "esp_box_fill_mode",
+        Items = {"solid", "gradient"},
+        Default = ESP.Drawing.Boxes.GradientFill and "gradient" or "solid",
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFill = Value == "gradient"
+        end
+    })
+
+    Boxes:Slider({
+        Name = "fill transparency",
+        Flag = "esp_fill_transparency",
+        Min = 0,
+        Max = 1,
+        Default = ESP.Drawing.Boxes.Filled.Transparency,
+        Decimals = 0.01,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.Transparency = Value
+        end
+    })
+
+    Boxes:Toggle({
+        Name = "fill animation",
+        Flag = "esp_fill_animation",
+        Default = ESP.Drawing.Boxes.Animate,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Animate = Value
+        end
+    })
+
+    Boxes:Slider({
+        Name = "rotation speed",
+        Flag = "esp_rotation_speed",
+        Min = 0,
+        Max = 600,
+        Default = ESP.Drawing.Boxes.RotationSpeed,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.RotationSpeed = Value
+        end
+    })
+
+    local Info = VisualsPage:Section({Name = "info", Side = 2})
+
+    Info:Toggle({
+        Name = "names",
+        Flag = "esp_names",
+        Default = ESP.Drawing.Names.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Names.Enabled = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "distance",
+        Flag = "esp_distance",
+        Default = ESP.Drawing.Distances.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Distances.Enabled = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "flags",
+        Flag = "esp_flags",
+        Default = ESP.Drawing.Flags.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Flags.Enabled = Value
+        end
+    })
+
+    Info:Dropdown({
+        Name = "distance position",
+        Flag = "esp_distance_position",
+        Items = {"Text", "Bottom"},
+        Default = ESP.Drawing.Distances.Position,
+        Callback = function(Value)
+            ESP.Drawing.Distances.Position = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon text",
+        Flag = "weapon_text",
+        Default = ESP.Drawing.Weapons.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Enabled = Value
+
+            if Value and Library.SetFlags["weapon_icons"] then
+                Library.SetFlags["weapon_icons"](false)
+            end
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon icons",
+        Flag = "weapon_icons",
+        Default = ESP.Drawing.Weapons.Icons,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Icons = Value
+
+            if Value and Library.SetFlags["weapon_text"] then
+                Library.SetFlags["weapon_text"](false)
+            end
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon gradient",
+        Flag = "esp_weapon_gradient",
+        Default = ESP.Drawing.Weapons.Gradient,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Gradient = Value
+        end
+    })
+
+    local Health = VisualsPage:Section({Name = "health", Side = 2})
+
+    Health:Toggle({
+        Name = "health bar",
+        Flag = "esp_health_bar",
+        Default = ESP.Drawing.Healthbar.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Enabled = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health text",
+        Flag = "esp_health_text",
+        Default = ESP.Drawing.Healthbar.HealthText,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.HealthText = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health lerp",
+        Flag = "esp_health_lerp",
+        Default = ESP.Drawing.Healthbar.Lerp,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Lerp = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health gradient",
+        Flag = "esp_health_gradient",
+        Default = ESP.Drawing.Healthbar.Gradient,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Gradient = Value
+        end
+    })
+
+    Health:Slider({
+        Name = "health width",
+        Flag = "esp_health_width",
+        Min = 1,
+        Max = 8,
+        Default = ESP.Drawing.Healthbar.Width,
+        Decimals = 0.1,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Width = Value
+        end
+    })
+
+    local Chams = VisualsPage:Section({Name = "chams", Side = 2})
+
+    Chams:Toggle({
+        Name = "chams",
+        Flag = "esp_enemy_chams",
+        Default = ESP.Drawing.Chams.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Enabled = Value
+        end
+    })
+
+    Chams:Toggle({
+        Name = "thermal",
+        Flag = "esp_thermal",
+        Default = ESP.Drawing.Chams.Thermal,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Thermal = Value
+        end
+    })
+
+    Chams:Dropdown({
+        Name = "occlusion chams",
+        Flag = "esp_occlusion",
+        Items = {"occluded", "always on top"},
+        Default = ESP.Drawing.Chams.VisibleCheck and "occluded" or "always on top",
+        Callback = function(Value)
+            local Occluded = Value == "occluded"
+            ESP.Drawing.Chams.VisibleCheck = Occluded
+            ESP.Drawing.Chams.Mode = Occluded and "VisibleOnly" or "VisibleAndHidden"
+        end
+    })
+
+    Chams:Slider({
+        Name = "fill transparency",
+        Flag = "esp_chams_fill_transparency",
+        Min = 0,
+        Max = 100,
+        Default = ESP.Drawing.Chams.Fill_Transparency,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Fill_Transparency = Value
+        end
+    })
+
+    Chams:Slider({
+        Name = "outline transparency",
+        Flag = "esp_chams_outline_transparency",
+        Min = 0,
+        Max = 100,
+        Default = ESP.Drawing.Chams.Outline_Transparency,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Outline_Transparency = Value
+        end
+    })
+
+    local LocalChamsHighlights = {}
+    local LocalChamsRefresh = 0
+    local LocalChamsPlayer = game:GetService("Players").LocalPlayer
+
+    ClearLocalChams = function()
+        for Part, Highlight in pairs(LocalChamsHighlights) do
+            pcall(function()
+                Highlight:Destroy()
+            end)
+            LocalChamsHighlights[Part] = nil
+        end
+    end
+
+    local function IsExcludedLocalPart(Part, Root)
+        local Ancestor = Part.Parent
+        while Ancestor and Ancestor ~= Root do
+            if Ancestor:IsA("Tool")
+                or Ancestor:IsA("Accessory")
+                or Ancestor.Name == "Item"
+                or Ancestor.Name == "Weapon"
+            then
+                return true
+            end
+            Ancestor = Ancestor.Parent
+        end
+        return false
+    end
+
+    local function IsArmPart(Part, Viewmodel)
+        local PartName = string.lower(Part.Name)
+        if string.find(PartName, "arm", 1, true) or string.find(PartName, "hand", 1, true) then
+            return true
+        end
+
+        local Ancestor = Part.Parent
+        while Ancestor and Ancestor ~= Viewmodel do
+            if Ancestor:IsA("Model")
+                and (Ancestor:FindFirstChild("LL") or Ancestor:FindFirstChild("LH"))
+            then
+                return true
+            end
+            Ancestor = Ancestor.Parent
+        end
+
+        return false
+    end
+
+    local function AddLocalChams(Part, Color)
+        local Highlight = LocalChamsHighlights[Part]
+        if not Highlight or not Highlight.Parent then
+            Highlight = Instance.new("Highlight")
+            Highlight.Name = "TypeshitLocalChams"
+            Highlight.Parent = Library.Holder.Instance
+            LocalChamsHighlights[Part] = Highlight
+        end
+
+        Highlight.Adornee = Part
+        Highlight.FillColor = Color
+        Highlight.OutlineColor = Color
+        Highlight.FillTransparency = 0.35
+        Highlight.OutlineTransparency = 0
+        Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    end
+
+    local function UpdateLocalChams(DeltaTime)
+        LocalChamsRefresh = LocalChamsRefresh + DeltaTime
+        if LocalChamsRefresh < 0.1 then
+            return
+        end
+        LocalChamsRefresh = 0
+
+        if not SelfChamsEnabled and not ArmChamsEnabled then
+            if next(LocalChamsHighlights) then
+                ClearLocalChams()
+            end
+            return
+        end
+
+        local Desired = {}
+        local Character = LocalChamsPlayer.Character
+        if SelfChamsEnabled and Character then
+            for _, Part in ipairs(Character:GetDescendants()) do
+                if Part:IsA("BasePart")
+                    and Part.Transparency < 1
+                    and not IsExcludedLocalPart(Part, Character)
+                then
+                    Desired[Part] = true
+                    AddLocalChams(Part, SelfChamsColor)
+                end
+            end
+        end
+
+        if ArmChamsEnabled then
+            local Camera = workspace.CurrentCamera
+            local Viewmodel = Camera and Camera:FindFirstChildOfClass("Model")
+            if Viewmodel then
+                for _, Part in ipairs(Viewmodel:GetDescendants()) do
+                    if Part:IsA("BasePart")
+                        and Part.Transparency < 1
+                        and IsArmPart(Part, Viewmodel)
+                    then
+                        Desired[Part] = true
+                        AddLocalChams(Part, ArmChamsColor)
+                    end
+                end
+            end
+        end
+
+        for Part, Highlight in pairs(LocalChamsHighlights) do
+            if not Desired[Part] or not Part.Parent then
+                pcall(function()
+                    Highlight:Destroy()
+                end)
+                LocalChamsHighlights[Part] = nil
+            end
+        end
+    end
+
+    Library:Connect(game:GetService("RunService").RenderStepped, UpdateLocalChams)
+
+    Chams:Toggle({
+        Name = "self chams",
+        Flag = "self_chams",
+        Default = false,
+        Callback = function(Value)
+            SelfChamsEnabled = Value == true
+        end
+    })
+
+    Chams:Toggle({
+        Name = "arm chams",
+        Flag = "arm_chams",
+        Default = false,
+        Callback = function(Value)
+            ArmChamsEnabled = Value == true
+        end
+    })
+
+    Chams:Label({Name = "self color"}):Colorpicker({
+        Default = SelfChamsColor,
+        Callback = function(Value)
+            if typeof(Value) == "Color3" then
+                SelfChamsColor = Value
+            end
+        end
+    })
+
+    Chams:Label({Name = "arm color"}):Colorpicker({
+        Default = ArmChamsColor,
+        Callback = function(Value)
+            if typeof(Value) == "Color3" then
+                ArmChamsColor = Value
+            end
+        end
+    })
+
+    local Colors = VisualsPage:Section({Name = "colors", Side = 1})
+
+    Colors:Label({Name = "box outline"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Full.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Full.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "box corners"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Corner.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Corner.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "box fill"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Filled.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "outline gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "outline gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "fill gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientFillRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFillRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "fill gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientFillRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFillRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "name"}):Colorpicker({
+        Default = ESP.Drawing.Names.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Names.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "distance"}):Colorpicker({
+        Default = ESP.Drawing.Distances.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Distances.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "friend tag"}):Colorpicker({
+        Default = ESP.Options.FriendcheckRGB,
+        Callback = function(Value)
+            ESP.Options.FriendcheckRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon text"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.WeaponTextRGB,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.WeaponTextRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon icon"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "health text"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.HealthTextRGB,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.HealthTextRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "health low"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "health mid"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "health high"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB3,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB3 = Value
+        end
+    })
+
+    Colors:Label({Name = "chams fill"}):Colorpicker({
+        Default = ESP.Drawing.Chams.FillRGB,
+        Callback = function(Value)
+            ESP.Drawing.Chams.FillRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "chams outline"}):Colorpicker({
+        Default = ESP.Drawing.Chams.OutlineRGB,
+        Callback = function(Value)
+            ESP.Drawing.Chams.OutlineRGB = Value
+        end
+    })
+
+    -- Keep the ESP object synchronized with the UI flags as well as the
+    -- individual callbacks. This also makes loaded configs apply reliably.
+    local ESPMenuRefresh = 0
+    local function SyncESPFromMenu()
+        local Flags = Library.Flags
+
+        if type(Flags.esp_enabled) == "boolean" then
+            ESP.Enabled = Flags.esp_enabled
+        end
+        if type(Flags.esp_team_check) == "boolean" then
+            ESP.TeamCheck = Flags.esp_team_check
+        end
+        if type(Flags.esp_fade_distance) == "boolean" then
+            ESP.FadeOut.OnDistance = Flags.esp_fade_distance
+        end
+        if type(Flags.esp_friend_tag) == "boolean" then
+            ESP.Options.Friendcheck = Flags.esp_friend_tag
+        end
+
+        if type(Flags.esp_max_distance) == "number" then
+            ESP.MaxDistance = Flags.esp_max_distance
+        end
+        if type(Flags.esp_update_rate) == "number" then
+            ESP.UpdateRate = Flags.esp_update_rate
+        end
+        if type(Flags.esp_font_size) == "number" then
+            ESP.FontSize = Flags.esp_font_size
+        end
+
+        if type(Flags.esp_corner_box) == "boolean" then
+            ESP.Drawing.Boxes.Corner.Enabled = Flags.esp_corner_box
+        end
+        if type(Flags.esp_box_outline) == "boolean" then
+            ESP.Drawing.Boxes.Full.Enabled = Flags.esp_box_outline
+        end
+        if type(Flags.esp_filled_box) == "boolean" then
+            ESP.Drawing.Boxes.Filled.Enabled = Flags.esp_filled_box
+        end
+        if type(Flags.esp_box_outline_mode) == "string" then
+            ESP.Drawing.Boxes.Gradient = Flags.esp_box_outline_mode == "gradient"
+        end
+        if type(Flags.esp_box_fill_mode) == "string" then
+            ESP.Drawing.Boxes.GradientFill = Flags.esp_box_fill_mode == "gradient"
+        end
+        if type(Flags.esp_fill_transparency) == "number" then
+            ESP.Drawing.Boxes.Filled.Transparency = Flags.esp_fill_transparency
+        end
+        if type(Flags.esp_fill_animation) == "boolean" then
+            ESP.Drawing.Boxes.Animate = Flags.esp_fill_animation
+        end
+        if type(Flags.esp_rotation_speed) == "number" then
+            ESP.Drawing.Boxes.RotationSpeed = Flags.esp_rotation_speed
+        end
+
+        if type(Flags.esp_names) == "boolean" then
+            ESP.Drawing.Names.Enabled = Flags.esp_names
+        end
+        if type(Flags.esp_distance) == "boolean" then
+            ESP.Drawing.Distances.Enabled = Flags.esp_distance
+        end
+        if type(Flags.esp_flags) == "boolean" then
+            ESP.Drawing.Flags.Enabled = Flags.esp_flags
+        end
+        if type(Flags.esp_distance_position) == "string" then
+            ESP.Drawing.Distances.Position = Flags.esp_distance_position
+        end
+        if type(Flags.weapon_text) == "boolean" then
+            ESP.Drawing.Weapons.Enabled = Flags.weapon_text
+        end
+        if type(Flags.weapon_icons) == "boolean" then
+            ESP.Drawing.Weapons.Icons = Flags.weapon_icons
+        end
+        if type(Flags.esp_weapon_gradient) == "boolean" then
+            ESP.Drawing.Weapons.Gradient = Flags.esp_weapon_gradient
+        end
+
+        if type(Flags.esp_health_bar) == "boolean" then
+            ESP.Drawing.Healthbar.Enabled = Flags.esp_health_bar
+        end
+        if type(Flags.esp_health_text) == "boolean" then
+            ESP.Drawing.Healthbar.HealthText = Flags.esp_health_text
+        end
+        if type(Flags.esp_health_lerp) == "boolean" then
+            ESP.Drawing.Healthbar.Lerp = Flags.esp_health_lerp
+        end
+        if type(Flags.esp_health_gradient) == "boolean" then
+            ESP.Drawing.Healthbar.Gradient = Flags.esp_health_gradient
+        end
+        if type(Flags.esp_health_width) == "number" then
+            ESP.Drawing.Healthbar.Width = Flags.esp_health_width
+        end
+
+        if type(Flags.esp_enemy_chams) == "boolean" then
+            ESP.Drawing.Chams.Enabled = Flags.esp_enemy_chams
+        end
+        if type(Flags.esp_thermal) == "boolean" then
+            ESP.Drawing.Chams.Thermal = Flags.esp_thermal
+        end
+        if type(Flags.esp_occlusion) == "string" then
+            local Occluded = Flags.esp_occlusion == "occluded"
+            ESP.Drawing.Chams.VisibleCheck = Occluded
+            ESP.Drawing.Chams.Mode = Occluded and "VisibleOnly" or "VisibleAndHidden"
+        end
+        if type(Flags.esp_chams_fill_transparency) == "number" then
+            ESP.Drawing.Chams.Fill_Transparency = Flags.esp_chams_fill_transparency
+        end
+        if type(Flags.esp_chams_outline_transparency) == "number" then
+            ESP.Drawing.Chams.Outline_Transparency = Flags.esp_chams_outline_transparency
+        end
+    end
+
+    SyncESPFromMenu()
+    Library:Connect(game:GetService("RunService").RenderStepped, function(DeltaTime)
+        ESPMenuRefresh = ESPMenuRefresh + DeltaTime
+        if ESPMenuRefresh < 0.1 then
+            return
+        end
+
+        ESPMenuRefresh = 0
+        SyncESPFromMenu()
+    end)
+end
+
+local function UnloadAll()
+    if Unloading then
+        return
+    end
+    Unloading = true
+    Environment.TypeshitCleanup = nil
+    AntiAimEnabled = false
+    AntiAimUnderground = false
+    SelfChamsEnabled = false
+    ArmChamsEnabled = false
+    if SetThirdPersonEnabled then
+        pcall(SetThirdPersonEnabled, false)
+    end
+    if SetFreecamEnabled then
+        pcall(SetFreecamEnabled, false)
+    end
+    if ClearLocalChams then
+        pcall(ClearLocalChams)
+    end
+    ClearZombieESP()
+    pcall(function()
+        ESP:Unload()
+    end)
+    pcall(function()
+        Library:Exit()
+    end)
+end
+
+Environment.TypeshitCleanup = UnloadAll
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local MiscPage = Window:Page({
+    Name = "misc"
+})
+
+local ExploitSection = MiscPage:Section({
+    Name = "Exploits",
+    side = 1
+})
+
+local radius = 5
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local FreecamUserInputService = game:GetService("UserInputService")
+local FreecamRunService = game:GetService("RunService")
+local FreecamBindName = "TypeshitFreecam"
+
+do
+    local AntiAimSection = MiscPage:Section({Name = "anti aim", Side = 2})
+    local AntiAimRunService = game:GetService("RunService")
+    local UpdateTiltRemote = ReplicatedStorage:FindFirstChild("Remotes")
+        and ReplicatedStorage.Remotes:FindFirstChild("UpdateTilt")
+    local LastAntiAimTilt = 0
+    local UndergroundBaseY
+
+    AntiAimSection:Toggle({
+        Name = "anti aim",
+        Flag = "anti_aim",
+        Default = false,
+        Callback = function(Value)
+            AntiAimEnabled = Value == true
+        end
+    })
+
+    AntiAimSection:Dropdown({
+        Name = "yaw mode",
+        Flag = "anti_aim_mode",
+        Items = {"Reverse", "Random", "Spin", "Target"},
+        Default = "Reverse",
+        Callback = function(Value)
+            if type(Value) == "string" then
+                AntiAimMode = Value
+            end
+        end
+    })
+
+    AntiAimSection:Slider({
+        Name = "yaw offset",
+        Flag = "anti_aim_yaw_offset",
+        Min = -180,
+        Max = 180,
+        Default = 0,
+        Decimals = 1,
+        Suffix = "°",
+        Callback = function(Value)
+            AntiAimYawOffset = Value
+        end
+    })
+
+    AntiAimSection:Slider({
+        Name = "pitch",
+        Flag = "anti_aim_pitch",
+        Min = -2,
+        Max = 2,
+        Default = 0,
+        Decimals = 0.01,
+        Callback = function(Value)
+            AntiAimPitch = Value
+        end
+    })
+
+    AntiAimSection:Toggle({
+        Name = "underground anti aim",
+        Flag = "anti_aim_underground",
+        Default = false,
+        Callback = function(Value)
+            AntiAimUnderground = Value == true
+        end
+    })
+
+    AntiAimSection:Slider({
+        Name = "underground depth",
+        Flag = "anti_aim_underground_depth",
+        Min = 1,
+        Max = 30,
+        Default = 3,
+        Decimals = 1,
+        Suffix = " studs",
+        Callback = function(Value)
+            AntiAimUndergroundDepth = Value
+        end
+    })
+
+    Library:Connect(AntiAimRunService.RenderStepped, function()
+        local Character = player.Character
+        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+        local Active = AntiAimEnabled or AntiAimUnderground
+
+        if not Active or FreecamEnabled or not Humanoid or not Root or Humanoid.Health <= 0 then
+            if Root and UndergroundBaseY and not FreecamEnabled then
+                local _, CurrentYaw, _ = Root.CFrame:ToOrientation()
+                Root.CFrame = CFrame.new(Root.Position.X, UndergroundBaseY, Root.Position.Z)
+                    * CFrame.Angles(0, CurrentYaw, 0)
+            end
+            UndergroundBaseY = nil
+            if Humanoid and not FreecamEnabled then
+                Humanoid.AutoRotate = true
+            end
+            return
+        end
+
+        local Camera = workspace.CurrentCamera
+        if not Camera then
+            return
+        end
+
+        Humanoid.AutoRotate = false
+        local LookVector = Camera.CFrame.LookVector
+        local Angle = -math.atan2(LookVector.Z, LookVector.X) - math.rad(90)
+
+        if AntiAimMode == "Reverse" then
+            Angle = Angle + math.rad(180)
+        elseif AntiAimMode == "Random" then
+            Angle = Angle + math.rad(math.random(-120, 120))
+        elseif AntiAimMode == "Spin" then
+            Angle = Angle + (os.clock() * 15) % (math.pi * 2)
+        end
+
+        local Position = Root.Position
+        if AntiAimUnderground then
+            UndergroundBaseY = UndergroundBaseY or Root.Position.Y
+            Position = Vector3.new(Position.X, UndergroundBaseY - AntiAimUndergroundDepth, Position.Z)
+        end
+
+        local Yaw = Angle + math.rad(AntiAimYawOffset)
+        if AntiAimMode == "Target" and SilentAimTargetPart and SilentAimTargetPart.Parent then
+            local _, TargetYaw, _ = CFrame.new(Root.Position, SilentAimTargetPart.Position):ToOrientation()
+            Yaw = TargetYaw + math.rad(AntiAimYawOffset)
+        end
+        Root.CFrame = CFrame.new(Position) * CFrame.Angles(0, Yaw, 0)
+
+        local Now = os.clock()
+        if UpdateTiltRemote and Now - LastAntiAimTilt >= 0.05 then
+            LastAntiAimTilt = Now
+            pcall(function()
+                UpdateTiltRemote:FireServer(math.clamp(AntiAimPitch, -2, 2), nil, 0, 0)
+            end)
+        end
+    end)
+end
+
+SetFreecamEnabled = function(Value)
+    Value = Value == true
+    local Camera = workspace.CurrentCamera
+    local Character = player.Character
+    local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+
+    if not Value and not FreecamEnabled and not FreecamCameraType and not FreecamCameraSubject then
+        return
+    end
+
+    if Value then
+        if FreecamEnabled or not Camera or not UpdateFreecam then
+            return
+        end
+
+        FreecamEnabled = true
+        FreecamCameraType = Camera.CameraType
+        FreecamCameraSubject = Camera.CameraSubject
+        FreecamMouseBehavior = FreecamUserInputService.MouseBehavior
+        pcall(function()
+            FreecamReplicationFocus = player.ReplicationFocus
+        end)
+        FreecamPosition = Camera.CFrame.Position
+        FreecamPitch, FreecamYaw = Camera.CFrame:ToOrientation()
+        Camera.CameraType = Enum.CameraType.Scriptable
+        FreecamUserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        if not FreecamBound and not FreecamRenderConnection then
+            local Bound = pcall(function()
+                FreecamRunService:BindToRenderStep(
+                    FreecamBindName,
+                    Enum.RenderPriority.Camera.Value + 1,
+                    UpdateFreecam
+                )
+            end)
+
+            if Bound then
+                FreecamBound = true
+            else
+                FreecamRenderConnection = FreecamRunService.RenderStepped:Connect(UpdateFreecam)
+            end
+        end
+        return
+    end
+
+    FreecamEnabled = false
+    if FreecamBound then
+        FreecamRunService:UnbindFromRenderStep(FreecamBindName)
+        FreecamBound = false
+    end
+    if FreecamRenderConnection then
+        FreecamRenderConnection:Disconnect()
+        FreecamRenderConnection = nil
+    end
+    FreecamPosition = nil
+    local RestoreSubject = FreecamCameraSubject
+    if Camera then
+        Camera.CameraType = FreecamCameraType or Enum.CameraType.Custom
+
+        if RestoreSubject and RestoreSubject.Parent then
+            Camera.CameraSubject = RestoreSubject
+        else
+            local Humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if Humanoid then
+                Camera.CameraSubject = Humanoid
+            end
+        end
+    end
+    FreecamCameraType = nil
+    FreecamCameraSubject = nil
+    FreecamUserInputService.MouseBehavior = FreecamMouseBehavior or Enum.MouseBehavior.Default
+    FreecamMouseBehavior = nil
+    pcall(function()
+        player.ReplicationFocus = FreecamReplicationFocus
+    end)
+    FreecamReplicationFocus = nil
+    if Root then
+        Root.Anchored = false
+    end
+end
+
+ExploitSection:Toggle({
+    Name = "freecam",
+    Flag = "fc_on",
+    Default = false,
+    Callback = function(Value)
+        SetFreecamEnabled(Value)
+    end
+})
+
+-- A standalone keybind is used so it can turn freecam on while the toggle is
+-- currently off; keybinds attached directly to toggles are gated by the UI lib.
+local FreecamKeybindReady = false
+ExploitSection:Label({Name = "freecam key"}):Keybind({
+    Flag = "fc_key",
+    Mode = "Toggle",
+    Default = Enum.KeyCode.F,
+    Callback = function()
+        if not FreecamKeybindReady then
+            return
+        end
+
+        local Value = not FreecamEnabled
+        if Library.SetFlags["fc_on"] then
+            Library.SetFlags["fc_on"](Value)
+        else
+            SetFreecamEnabled(Value)
+        end
+    end
+})
+FreecamKeybindReady = true
+
+ExploitSection:Slider({
+    Name = "freecam speed",
+    Flag = "fc_speed",
+    Min = 10,
+    Max = 575,
+    Default = 50,
+    Decimals = 0,
+    Callback = function(Value)
+        FreecamSpeed = Value
+    end
+})
+
+SetThirdPersonEnabled = function(Value)
+    Value = Value == true
+
+    if Value then
+        if ThirdPersonEnabled then
+            return
+        end
+
+        ThirdPersonEnabled = true
+        ThirdPersonCameraMode = player.CameraMode
+        ThirdPersonMinZoomDistance = player.CameraMinZoomDistance
+        ThirdPersonMaxZoomDistance = player.CameraMaxZoomDistance
+        ThirdPersonMouseLock = player.DevEnableMouseLock
+        return
+    end
+
+    if not ThirdPersonEnabled
+        and ThirdPersonCameraMode == nil
+        and ThirdPersonMinZoomDistance == nil
+        and ThirdPersonMaxZoomDistance == nil
+    then
+        return
+    end
+
+    ThirdPersonEnabled = false
+    pcall(function()
+        player.CameraMode = ThirdPersonCameraMode or Enum.CameraMode.LockFirstPerson
+        player.CameraMinZoomDistance = ThirdPersonMinZoomDistance or 0
+        player.CameraMaxZoomDistance = ThirdPersonMaxZoomDistance or 0
+        if ThirdPersonMouseLock ~= nil then
+            player.DevEnableMouseLock = ThirdPersonMouseLock
+        end
+    end)
+
+    ThirdPersonCameraMode = nil
+    ThirdPersonMinZoomDistance = nil
+    ThirdPersonMaxZoomDistance = nil
+    ThirdPersonMouseLock = nil
+end
+
+ExploitSection:Toggle({
+    Name = "third person",
+    Flag = "tp_on",
+    Default = false,
+    Callback = function(Value)
+        SetThirdPersonEnabled(Value)
+    end
+})
+
+local ThirdPersonKeybindReady = false
+ExploitSection:Label({Name = "third person key"}):Keybind({
+    Flag = "tp_key",
+    Mode = "Toggle",
+    Default = Enum.KeyCode.V,
+    Callback = function()
+        if not ThirdPersonKeybindReady then
+            return
+        end
+
+        local Value = not ThirdPersonEnabled
+        if Library.SetFlags["tp_on"] then
+            Library.SetFlags["tp_on"](Value)
+        else
+            SetThirdPersonEnabled(Value)
+        end
+    end
+})
+ThirdPersonKeybindReady = true
+
+ExploitSection:Slider({
+    Name = "third person distance",
+    Flag = "tp_distance",
+    Min = 1,
+    Max = 40,
+    Default = 8,
+    Decimals = 0.1,
+    Suffix = " studs",
+    Callback = function(Value)
+        ThirdPersonDistance = Value
+    end
+})
+
+Library:Connect(FreecamRunService.RenderStepped, function()
+    if not ThirdPersonEnabled or FreecamEnabled then
+        return
+    end
+
+    pcall(function()
+        player.CameraMode = Enum.CameraMode.Classic
+        player.CameraMinZoomDistance = ThirdPersonDistance
+        player.CameraMaxZoomDistance = ThirdPersonDistance
+        player.DevEnableMouseLock = true
+    end)
+end)
+
+task.spawn(function()
+    while not Unloading do
+        task.wait(0.2)
+
+        if FreecamEnabled and FreecamPosition then
+            local ClosestRoot
+            local ClosestDistance = math.huge
+
+            for _, Player in ipairs(Players:GetPlayers()) do
+                local Character = Player.Character
+                local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+                if Root then
+                    local Distance = (FreecamPosition - Root.Position).Magnitude
+                    if Distance < ClosestDistance then
+                        ClosestRoot = Root
+                        ClosestDistance = Distance
+                    end
+                end
+            end
+
+            pcall(function()
+                player.ReplicationFocus = ClosestRoot
+            end)
+        end
+    end
+end)
+
+UpdateFreecam = function(DeltaTime)
+    if not FreecamEnabled then
+        return
+    end
+
+    local Camera = workspace.CurrentCamera
+    if not Camera then
+        return
+    end
+
+    if not FreecamPosition then
+        FreecamPosition = Camera.CFrame.Position
+        FreecamPitch, FreecamYaw = Camera.CFrame:ToOrientation()
+    end
+
+    Camera.CameraType = Enum.CameraType.Scriptable
+    FreecamUserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+    local MouseDelta = FreecamUserInputService:GetMouseDelta()
+    FreecamPitch = math.clamp(FreecamPitch - MouseDelta.Y * 0.005, -math.pi / 2 + 0.01, math.pi / 2 - 0.01)
+    FreecamYaw = FreecamYaw - MouseDelta.X * 0.005
+
+    local Rotation = CFrame.Angles(0, FreecamYaw, 0) * CFrame.Angles(FreecamPitch, 0, 0)
+    local Forward = Rotation.LookVector
+    local Right = Rotation.RightVector
+    local Direction = Vector3.new(0, 0, 0)
+
+    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.W) then
+        Direction = Direction + Forward
+    end
+    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.S) then
+        Direction = Direction - Forward
+    end
+    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.D) then
+        Direction = Direction + Right
+    end
+    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.A) then
+        Direction = Direction - Right
+    end
+    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.Space) then
+        Direction = Direction + Vector3.new(0, 1, 0)
+    end
+    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        Direction = Direction - Vector3.new(0, 1, 0)
+    end
+
+    if Direction.Magnitude > 0 then
+        Direction = Direction.Unit
+    end
+
+    local Speed = FreecamUserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        and FreecamSpeed / 10
+        or FreecamSpeed
+    FreecamPosition = FreecamPosition + Direction * DeltaTime * Speed
+    Camera.CFrame = CFrame.new(FreecamPosition) * Rotation
+end
+
+local function StartUnlockAllSkins()
+    if UnlockAllSkinsStarted then
+        return
+    end
+
+    UnlockAllSkinsStarted = true
+
+    task.spawn(function()
+        pcall(function()
+            local FunctionLibrary = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("FunctionLibraryExtension"))
+            if not FunctionLibrary then
+                return
+            end
+
+            if FunctionLibrary.IsItemAccessibleToPlayer then
+                local OldIsItemAccessible = FunctionLibrary.IsItemAccessibleToPlayer
+                FunctionLibrary.IsItemAccessibleToPlayer = function(self, ...)
+                    if UnlockAllSkinsEnabled then
+                        return true
+                    end
+                    return OldIsItemAccessible(self, ...)
+                end
+            end
+
+            if FunctionLibrary.FindDeepAncestor then
+                FunctionLibrary.FindDeepAncestor = function(self, InstanceValue, ClassName, Options)
+                    local Depth = 0
+                    if not InstanceValue or typeof(InstanceValue) ~= "Instance" then
+                        return InstanceValue
+                    end
+
+                    while InstanceValue and InstanceValue.Parent and InstanceValue.Parent.ClassName == ClassName do
+                        if InstanceValue.Parent.Parent
+                            and InstanceValue.Parent.Parent.Parent
+                            and InstanceValue.Parent.Parent.Parent.Name == "Attachments"
+                        then
+                            InstanceValue = InstanceValue.Parent.Parent.Parent
+                        else
+                            InstanceValue = InstanceValue.Parent
+                        end
+
+                        Depth = Depth + 1
+                        if Options and type(Options) == "table" and Options.SearchForInteraction
+                            and InstanceValue:GetAttribute(Options.SearchForInteraction)
+                        then
+                            break
+                        end
+
+                        if Depth > 10
+                            or InstanceValue:FindFirstChild("DeepAncestorBreak")
+                            or InstanceValue:FindFirstChild("Moving")
+                        then
+                            break
+                        end
+                    end
+
+                    return InstanceValue
+                end
+            end
+        end)
+
+        if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
+            pcall(function()
+                local OldNamecall
+                local MakeClosure = type(newcclosure) == "function" and newcclosure or function(Callback)
+                    return Callback
+                end
+                OldNamecall = hookmetamethod(game, "__namecall", MakeClosure(function(self, ...)
+                    local Method = tostring(getnamecallmethod())
+                    if UnlockAllSkinsEnabled
+                        and (Method == "FireServer" or Method == "fireServer"
+                            or Method == "InvokeServer" or Method == "invokeServer")
+                        and self.Name == "ChangeSkin"
+                    then
+                        local Arguments = {...}
+                        local Weapon = Arguments[1]
+                        local SkinName = Arguments[2]
+                        if Weapon and typeof(Weapon) == "Instance" then
+                            pcall(function()
+                                Weapon:SetAttribute("SpoofedSkin", tostring(SkinName) == "Default" and "" or tostring(SkinName))
+                            end)
+                            return true
+                        end
+                    end
+
+                    return OldNamecall(self, ...)
+                end))
+            end)
+        end
+    end)
+
+    task.spawn(function()
+        while not Unloading do
+            task.wait(2)
+
+            if UnlockAllSkinsEnabled then
+                pcall(function()
+                    local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+                    local LocalFolder = PlayerFolder and PlayerFolder:FindFirstChild(player.Name)
+                    local Purchases = LocalFolder and LocalFolder:FindFirstChild("Status")
+                        and LocalFolder.Status:FindFirstChild("Purchases")
+                    if not Purchases then
+                        return
+                    end
+
+                    local Skins = Purchases:FindFirstChild("Skins")
+                    if not Skins then
+                        Skins = Instance.new("Folder")
+                        Skins.Name = "Skins"
+                        Skins.Parent = Purchases
+                    end
+
+                    local function UnlockFrom(FolderName)
+                        local SkinFolder = ReplicatedStorage:FindFirstChild(FolderName)
+                        if not SkinFolder then
+                            return
+                        end
+
+                        for _, WeaponSkins in ipairs(SkinFolder:GetChildren()) do
+                            local WeaponFolder = Skins:FindFirstChild(WeaponSkins.Name)
+                            if not WeaponFolder then
+                                WeaponFolder = Instance.new("Folder")
+                                WeaponFolder.Name = WeaponSkins.Name
+                                WeaponFolder.Parent = Skins
+                            end
+
+                            for _, Skin in ipairs(WeaponSkins:GetChildren()) do
+                                if not WeaponFolder:FindFirstChild(Skin.Name) then
+                                    local MockSkin = Instance.new("Folder")
+                                    MockSkin.Name = Skin.Name
+                                    MockSkin.Parent = WeaponFolder
+                                end
+                            end
+                        end
+                    end
+
+                    UnlockFrom("Skins")
+                    UnlockFrom("SkinPacks")
+                end)
+            end
+        end
+    end)
+
+    -- Apply the selected local skin to the equipped weapon and viewmodel.
+    task.spawn(function()
+        local FunctionLibrary
+
+        while not Unloading do
+            task.wait(0.1)
+
+            if UnlockAllSkinsEnabled then
+                pcall(function()
+                    local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+                    local LocalFolder = PlayerFolder and PlayerFolder:FindFirstChild(player.Name)
+                    local Inventory = LocalFolder and LocalFolder:FindFirstChild("Inventory")
+                    local Holding = LocalFolder and LocalFolder:FindFirstChild("Holding")
+                    local ActiveWeapon = Holding and Holding.Value
+                    if not Inventory or not ActiveWeapon or not ActiveWeapon:IsA("ObjectValue") then
+                        return
+                    end
+
+                    local WeaponObject = ActiveWeapon.Value
+                    local WeaponName = WeaponObject and WeaponObject.Name
+                    if not WeaponObject or not WeaponName then
+                        return
+                    end
+
+                    for _, Item in ipairs(Inventory:GetChildren()) do
+                        if Item:IsA("ObjectValue") and Item.Value == WeaponObject then
+                            local SpoofedSkin = Item:GetAttribute("SpoofedSkin")
+                            if SpoofedSkin == nil then
+                                return
+                            end
+
+                            local TargetSkin = SpoofedSkin == "" and nil or tostring(SpoofedSkin)
+                            if WeaponObject:GetAttribute("Skin") ~= TargetSkin then
+                                WeaponObject:SetAttribute("Skin", TargetSkin)
+                            end
+
+                            if not FunctionLibrary then
+                                FunctionLibrary = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("FunctionLibraryExtension"))
+                            end
+
+                            local function ApplyTo(parent)
+                                if not parent then
+                                    return
+                                end
+
+                                local WeaponModel = parent:FindFirstChild(WeaponName)
+                                local AppliedSkin = TargetSkin or "__default"
+                                if WeaponModel and WeaponModel:IsA("Model")
+                                    and WeaponModel:GetAttribute("SpoofSkinApplied") ~= AppliedSkin
+                                then
+                                    FunctionLibrary:UpdateSkin(nil, WeaponModel, TargetSkin)
+                                    WeaponModel:SetAttribute("SpoofSkinApplied", AppliedSkin)
+                                end
+                            end
+
+                            ApplyTo(player.Character)
+                            local Camera = workspace.CurrentCamera
+                            if Camera then
+                                for _, Child in ipairs(Camera:GetChildren()) do
+                                    if Child:GetAttribute("Temp") or Child.Name == player.Name then
+                                        ApplyTo(Child)
+                                    end
+                                end
+                            end
+                            break
+                        end
+                    end
+                end)
+            end
+        end
+    end)
+end
+
+ExploitSection:Toggle({
+    Name = "unlock all skins",
+    Flag = "unlock_all_skins",
+    Default = false,
+    Callback = function(Value)
+        UnlockAllSkinsEnabled = Value == true
+        if UnlockAllSkinsEnabled then
+            StartUnlockAllSkins()
+        end
+    end
+})
+
+do
+    local SkinChangerToggle = ExploitSection:Toggle({
+        Name = "skinchanger",
+        Flag = "skinchanger",
+        Default = false,
+        Callback = function(Value)
+            SkinChangerEnabled = Value == true
+            if ApplySkinSelections then
+                ApplySkinSelections()
+            end
+        end
+    })
+    local SkinChangerSettings = SkinChangerToggle:Settings()
+    local SkinRoot = ReplicatedStorage:FindFirstChild("Skins")
+    local SkinPackRoot = ReplicatedStorage:FindFirstChild("SkinPacks")
+    local RangedWeapons = ReplicatedStorage:FindFirstChild("RangedWeapons")
+    local SkinTypes = {}
+    local SkinInventoryItems = {}
+    local OriginalInventoryState = {}
+    local MeleeNames = {
+        "IceDagger", "GoldenDV2", "M9Fade", "IceAxe", "Karambit",
+        "PlasmaNinjato", "DV2", "AnarchyTomahawk", "Cutlass", "Scythe", "Greatsword"
+    }
+
+    local function AddSkinWeapon(WeaponName, Folder)
+        if not Folder or not Folder:IsA("Folder") then
+            return
+        end
+
+        SkinTypes[WeaponName] = SkinTypes[WeaponName] or {}
+        local Existing = {}
+        for _, SkinName in ipairs(SkinTypes[WeaponName]) do
+            Existing[SkinName] = true
+        end
+
+        if not Existing.Default then
+            table.insert(SkinTypes[WeaponName], "Default")
+            Existing.Default = true
+        end
+
+        for _, Skin in ipairs(Folder:GetChildren()) do
+            if not Existing[Skin.Name] then
+                table.insert(SkinTypes[WeaponName], Skin.Name)
+                Existing[Skin.Name] = true
+            end
+        end
+
+        table.sort(SkinTypes[WeaponName], function(Left, Right)
+            if Left == "Default" then
+                return true
+            end
+            if Right == "Default" then
+                return false
+            end
+            return Left < Right
+        end)
+    end
+
+    for _, Root in ipairs({SkinRoot, SkinPackRoot}) do
+        if Root then
+            for _, WeaponFolder in ipairs(Root:GetChildren()) do
+                AddSkinWeapon(WeaponFolder.Name, WeaponFolder)
+            end
+        end
+    end
+
+    if RangedWeapons then
+        for _, Weapon in ipairs(RangedWeapons:GetChildren()) do
+            if SkinTypes[Weapon.Name] then
+                AddSkinWeapon(Weapon.Name, SkinRoot and SkinRoot:FindFirstChild(Weapon.Name))
+            end
+        end
+    end
+
+    local function ResolveSkinItem(WeaponName, SkinName)
+        if SkinName == "Default" then
+            local ItemsList = ReplicatedStorage:FindFirstChild("ItemsList")
+            return (ItemsList and ItemsList:FindFirstChild(WeaponName))
+                or (RangedWeapons and RangedWeapons:FindFirstChild(WeaponName))
+        end
+
+        local ItemsList = ReplicatedStorage:FindFirstChild("ItemsList")
+        return (ItemsList and ItemsList:FindFirstChild(SkinName))
+            or (RangedWeapons and RangedWeapons:FindFirstChild(SkinName))
+            or ReplicatedStorage:FindFirstChild(SkinName, true)
+    end
+
+    local function FindInventoryItem(Inventory, WeaponName, CandidateNames)
+        local Cached = SkinInventoryItems[WeaponName]
+        if Cached and Cached.Parent then
+            return Cached
+        end
+
+        local Names = CandidateNames or {WeaponName}
+        for _, Item in ipairs(Inventory:GetDescendants()) do
+            if (Item:IsA("ObjectValue") or Item:IsA("StringValue"))
+                and table.find(Names, Item.Name)
+            then
+                SkinInventoryItems[WeaponName] = Item
+                return Item
+            end
+        end
+
+        return nil
+    end
+
+    local function ApplyInventorySkin(Inventory, WeaponName, SkinName)
+        local InventoryItem = FindInventoryItem(Inventory, WeaponName)
+        local SelectedItem = ResolveSkinItem(WeaponName, SkinName)
+        if not InventoryItem or not SelectedItem then
+            return false
+        end
+
+        if not OriginalInventoryState[WeaponName] then
+            OriginalInventoryState[WeaponName] = {
+                Item = InventoryItem,
+                Name = InventoryItem.Name,
+                Value = InventoryItem.Value,
+            }
+        end
+
+        InventoryItem.Name = SkinName
+        if InventoryItem:IsA("ObjectValue") then
+            InventoryItem.Value = SelectedItem
+        elseif InventoryItem:IsA("StringValue") then
+            InventoryItem.Value = SkinName
+        end
+
+        return true
+    end
+
+    local function ApplyMeleeSkin(Inventory, SkinName)
+        local InventoryItem = FindInventoryItem(Inventory, "__melee", MeleeNames)
+        local SelectedItem = ResolveSkinItem(SkinName, SkinName)
+        if not InventoryItem or not SelectedItem then
+            return false
+        end
+
+        if not OriginalInventoryState.__melee then
+            OriginalInventoryState.__melee = {
+                Item = InventoryItem,
+                Name = InventoryItem.Name,
+                Value = InventoryItem.Value,
+            }
+        end
+
+        InventoryItem.Name = SkinName
+        if InventoryItem:IsA("ObjectValue") then
+            InventoryItem.Value = SelectedItem
+        elseif InventoryItem:IsA("StringValue") then
+            InventoryItem.Value = SkinName
+        end
+
+        return true
+    end
+
+    local function RestoreInventorySkins()
+        for WeaponName, State in pairs(OriginalInventoryState) do
+            local Item = State.Item
+            if Item and Item.Parent then
+                pcall(function()
+                    Item.Name = State.Name
+                    if Item:IsA("ObjectValue") then
+                        Item.Value = State.Value
+                    elseif Item:IsA("StringValue") then
+                        Item.Value = State.Value
+                    end
+                end)
+            end
+            SkinInventoryItems[WeaponName] = nil
+            OriginalInventoryState[WeaponName] = nil
+        end
+    end
+
+    ApplySkinSelections = function()
+        local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+        local LocalFolder = PlayerFolder and PlayerFolder:FindFirstChild(player.Name)
+        local Inventory = LocalFolder and LocalFolder:FindFirstChild("Inventory")
+        if not Inventory then
+            return
+        end
+
+        if not SkinChangerEnabled then
+            RestoreInventorySkins()
+            return
+        end
+
+        for WeaponName in pairs(SkinTypes) do
+            local Enabled = Library.Flags["skin_" .. WeaponName .. "_enabled"]
+            local SelectedSkin = Library.Flags["skin_" .. WeaponName]
+            if Enabled and type(SelectedSkin) == "string" then
+                ApplyInventorySkin(Inventory, WeaponName, SelectedSkin)
+            end
+        end
+
+        if Library.Flags.skin_melee_enabled and type(Library.Flags.skin_melee) == "string" then
+            ApplyMeleeSkin(Inventory, Library.Flags.skin_melee)
+        end
+    end
+
+    local function CreateSkinOption(WeaponName, SkinItems)
+        local Dropdown
+        local EnabledFlag = "skin_" .. WeaponName .. "_enabled"
+        local SkinFlag = "skin_" .. WeaponName
+
+        SkinChangerSettings:Toggle({
+            Name = WeaponName,
+            Flag = EnabledFlag,
+            Default = false,
+            Callback = function(Value)
+                if Dropdown then
+                    Dropdown:SetVisibility(Value == true)
+                end
+                ApplySkinSelections()
+            end
+        })
+
+        Dropdown = SkinChangerSettings:Dropdown({
+            Name = "skin",
+            Flag = SkinFlag,
+            Items = SkinItems,
+            Default = SkinItems[1] or "Default",
+            Callback = function()
+                ApplySkinSelections()
+            end
+        })
+        Dropdown:SetVisibility(false)
+    end
+
+    local MeleeDropdown
+    local MeleeToggle = SkinChangerSettings:Toggle({
+        Name = "Melee",
+        Flag = "skin_melee_enabled",
+        Default = false,
+        Callback = function(Value)
+            if MeleeDropdown then
+                MeleeDropdown:SetVisibility(Value == true)
+            end
+            ApplySkinSelections()
+        end
+    })
+    MeleeDropdown = SkinChangerSettings:Dropdown({
+        Name = "melee skin",
+        Flag = "skin_melee",
+        Items = MeleeNames,
+        Default = "DV2",
+        Callback = function()
+            ApplySkinSelections()
+        end
+    })
+    MeleeDropdown:SetVisibility(false)
+
+    for WeaponName, SkinItems in pairs(SkinTypes) do
+        CreateSkinOption(WeaponName, SkinItems)
+    end
+
+    task.spawn(function()
+        while not Unloading do
+            task.wait(0.5)
+            if SkinChangerEnabled then
+                ApplySkinSelections()
+            end
+        end
+    end)
+end
+
+ExploitSection:Button({
+    Name = "Bring all traders",
+
+    Callback = function()
+        local character = player.Character or player.CharacterAdded:Wait()
+        local hrp = character:WaitForChild("HumanoidRootPart")
+
+        local targets = {
+            workspace:FindFirstChild("Jake"),
+            workspace:FindFirstChild("VaultManager"),
+            workspace:FindFirstChild("Boss"),
+            workspace:FindFirstChild("Mihkel"),
+            workspace:FindFirstChild("Nurse"),
+            workspace:FindFirstChild("Blaze"),
+            workspace:FindFirstChild("Seryozha"),
+            workspace:FindFirstChild("Tarmo"),
+            workspace:FindFirstChild("Anna"),
+        }
+
+        local validTargets = {}
+
+        for _, target in ipairs(targets) do
+            if target then
+                table.insert(validTargets, target)
+            end
+        end
+
+        for i, target in ipairs(validTargets) do
+            local angle = ((i - 1) / #validTargets) * math.pi * 2
+
+            local offset = Vector3.new(
+                math.cos(angle) * radius,
+                0,
+                math.sin(angle) * radius
+            )
+
+            local position = hrp.Position + offset
+            local cf = CFrame.lookAt(position, hrp.Position)
+
+            if target:IsA("Model") then
+                target:PivotTo(cf)
+
+            elseif target:IsA("BasePart") then
+                target.CFrame = cf
+            end
+        end
+    end
+})
+
+ExploitSection:Slider({
+    Name = "Trader Radius",
+    Min = 0,
+    Max = 10,
+    Default = 5,
+    Decimals = 1,
+    Suffix = " Studs",
+
+    Callback = function(Value)
+        radius = Value
+    end
+})
+
+do -- configs
+    local ConfigsSection = MiscPage:Section({Name = "configs", Side = 2})
+        local ConfigsFolder = Library.Directory .. Library.Folders.Configs .. "/"
+        local ConfigSelected
+        local ConfigName
+
+        local function HasFileApi()
+            return type(isfile) == "function"
+                and type(readfile) == "function"
+                and type(writefile) == "function"
+                and type(delfile) == "function"
+        end
+
+        local function IsSafeConfigName(Name)
+            return type(Name) == "string"
+                and Name ~= ""
+                and not string.find(Name, "[/\\\\]")
+                and not string.find(Name, "%.%.")
+        end
+
+        local ConfigsDropdown = ConfigsSection:Dropdown({
+            Name = "configs",
+            Flag = "configs_dropdown",
+            Items = { },
+            Multi = false,
+            Callback = function(Value)
+                ConfigSelected = Value
+            end
+        })
+
+        ConfigsSection:Textbox({
+            Flag = "config_name",
+            Placeholder = "",
+            Callback = function(Value)
+                ConfigName = Value
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "create",
+            Callback = function()
+                if not HasFileApi() then
+                    Library:Notification{Name = "file API unavailable", Time = 3}
+                    return
+                end
+
+                if not IsSafeConfigName(ConfigName) then
+                    Library:Notification{Name = "invalid config name", Time = 3}
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local Config = Library:GetConfig()
+                    assert(type(Config) == "string", "failed to serialize config")
+                    writefile(ConfigsFolder .. ConfigName .. ".json", Config)
+                    Library:GetConfigsList(ConfigsDropdown)
+                end)
+
+                if Success then
+                    Library:Notification{Name = "created config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to create config: " .. tostring(Error), Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "delete",
+            Callback = function()
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
+
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    delfile(Path)
+                    Library:GetConfigsList(ConfigsDropdown)
+                end)
+
+                if Success then
+                    Library:Notification{Name = "deleted config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to delete config: " .. tostring(Error), Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "load",
+            Callback = function()
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
+
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local ConfigContent = readfile(Path)
+                    local Loaded, LoadError = Library:LoadConfig(ConfigContent)
+                    assert(Loaded, LoadError or "unknown config error")
+                end)
+
+                if Success then
+                    Library:Notification{Name = "loaded config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to load config: " .. tostring(Error), Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "save",
+            Callback = function()
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
+
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local Config = Library:GetConfig()
+                    assert(type(Config) == "string", "failed to serialize config")
+                    writefile(Path, Config)
+                end)
+
+                if Success then
+                    Library:Notification{Name = "saved config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to save config: " .. tostring(Error), Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "refresh",
+            Callback = function()
+                Library:GetConfigsList(ConfigsDropdown)
+            end
+        })
+
+        pcall(function()
+            Library:GetConfigsList(ConfigsDropdown)
+        end)
+end
+do -- server
+    local Copy = setclipboard or toclipboard
+    local TeleportService = game:GetService("TeleportService")
+    local Players = game:GetService("Players")
+
+    local ServerSection = MiscPage:Section({Name = "server", Side = 2})
+        ServerSection:Button({
+            Name = "rejoin",
+            Callback = function()
+                local LocalPlayer = Players.LocalPlayer
+
+                if #Players:GetPlayers() <= 1 then
+                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                else
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                end
+            end
+        })
+
+        ServerSection:Button({
+            Name = "copy server id",
+            Callback = function()
+                if not Copy then
+                    return
+                end
+
+                -- lua code that joins the copied game and server when executed
+                Copy(string.format(
+                    'game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s", game:GetService("Players").LocalPlayer)',
+                    game.PlaceId,
+                    game.JobId
+                ))
+
+                Library:Notification{Name = "copied server join code", Time = 3}
+            end
+        })
+
+        ServerSection:Button({
+            Name = "copy game id",
+            Callback = function()
+                if not Copy then
+                    return
+                end
+
+                Copy(tostring(game.PlaceId))
+
+                Library:Notification{Name = "copied game id", Time = 3}
+            end
+        })
+end
+do -- other
+    local OtherSection = MiscPage:Section({Name = "other", Side = 2})
+        OtherSection:Button({
+            Name = "unload",
+            Callback = function()
+                UnloadAll()
+            end
+        })
+
+        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.RightShift, Callback = function(Value)
+            local BindState = Library.Flags["uibind"]
+            if BindState and BindState.Key then
+                Library.MenuKeybind = BindState.Key
+            end
+        end})
+
+        OtherSection:Dropdown({
+            Name = "animation style",
+            Items = {"Linear", "Quad", "Quart", "Back", "Bounce", "Circular", "Cubic", "Elastic", "Exponential", "Sine", "Quint"},
+            Default = "Cubic",
+            Callback = function(Value)
+                Library.Animation.Style = Value
+            end
+        })
+
+        OtherSection:Dropdown({
+            Name = "animation direction",
+            Items = {"In", "Out", "InOut"},
+            Default = "Out",
+            Callback = function(Value)
+                Library.Animation.Direction = Value
+            end
+        })
+
+        OtherSection:Slider({
+            Name = "animation time",
+            Min = 0,
+            Max = 1,
+            Default = 0.25,
+            Decimals = 0.01,
+            Suffix = "s",
+            Callback = function(Value)
+                Library.Animation.Time = Value
+            end
+        })
+end
+
+Window:InitWindow()
+
+return Window
