@@ -18,8 +18,6 @@ do --// UI Source
     local CoreGui = cloneref(game:GetService("CoreGui"))
     --#endregion
 
-    gethui = gethui or function() return CoreGui end
-
     --#region Variables
     local LocalPlayer = Players.LocalPlayer
     local IsMobile = UserInputService.TouchEnabled or false
@@ -780,7 +778,7 @@ do --// UI Source
         end
 
         Library.Holder = Library:Create("ScreenGui", {
-            Parent = gethui(),
+            Parent = CoreGui,
             IgnoreGuiInset = true,
             Name = "\0",
             ZIndexBehavior = Enum.ZIndexBehavior.Global,
@@ -788,7 +786,7 @@ do --// UI Source
         })
 
         Library.UnusedHolder = Library:Create("ScreenGui", {
-            Parent = gethui(),
+            Parent = CoreGui,
             Name = "\0",
             Enabled = false,
             ZIndexBehavior = Enum.ZIndexBehavior.Global,
