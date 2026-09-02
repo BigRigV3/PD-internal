@@ -40,9 +40,24 @@ local function LoadScript(Url)
     return Chunk()
 end
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/Uilib"))()
-local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/esplib.lua"))()
+local function HttpGet(Url)
+    -- Volt typically uses syn.request, but you can use a generic fallback
+    local requestFunc = syn and syn.request or http and http.request or request
+    if requestFunc then
+        local response = requestFunc({
+            Url = Url,
+            Method = "GET"
+        })
+        if response and response.Body then
+            return response.Body
+        end
+    end
+    -- Fallback to game:HttpGet if the custom request fails
+    return game:HttpGet(Url)
+end
 
+local Library = loadstring(HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/Uilib"))()
+local ESP = loadstring(HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/esplib"))()
 local Window = Library:Window({
     Name = "Zombie game",
     Rank = "developer"
