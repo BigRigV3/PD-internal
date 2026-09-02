@@ -40,7 +40,7 @@ local function LoadScript(Url)
     return Chunk()
 end
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/Uilib.lua"))()
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/Uilib"))()
 local ESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/esplib.lua"))()
 
 local Window = Library:Window({
