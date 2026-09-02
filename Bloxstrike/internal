@@ -1,0 +1,1914 @@
+local BootstrapEnvironment = getgenv()
+if BootstrapEnvironment.TypeshitCleanup then
+    local PreviousCleanup = BootstrapEnvironment.TypeshitCleanup
+    BootstrapEnvironment.TypeshitCleanup = nil
+    pcall(PreviousCleanup)
+end
+
+local function LoadScript(Url, LocalPath)
+    local Source
+
+    if LocalPath and type(isfile) == "function" and type(readfile) == "function" then
+        local Ok, Result = pcall(function()
+            if isfile(LocalPath) then
+                return readfile(LocalPath)
+            end
+        end)
+
+        if Ok and type(Result) == "string" and #Result > 0 then
+            Source = Result
+        end
+    end
+
+    for _ = 1, 3 do
+        if Source then
+            break
+        end
+
+        local Ok, Result = pcall(function()
+            return game:HttpGet(Url)
+        end)
+        if Ok and type(Result) == "string" and #Result > 0 and not string.find(Result, "^%d%d%d: " ) then
+            Source = Result
+            break
+        end
+        task.wait(1)
+    end
+    assert(Source, "failed to download " .. Url)
+    if string.find(Url, "/esplib$") then
+        local FirstReturn = string.find(Source, "\nreturn ESP")
+        if FirstReturn then
+            Source = string.sub(Source, 1, FirstReturn + #"\nreturn ESP" - 1)
+        end
+    end
+    local Chunk, Error = loadstring(Source)
+    assert(Chunk, "failed to compile " .. Url .. ": " .. tostring(Error))
+    return Chunk()
+end
+
+local Library = LoadScript(
+    "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/uilib",
+    "bloxstrike/Uilib.lua"
+)
+local ESP = LoadScript(
+    "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib",
+    "bloxstrike/Esplib.lua"
+)
+local Window = Library:Window({
+    Name = "Bloxstrike",
+    Rank = "developer"
+})
+
+local CoreGui = game:GetService("CoreGui")
+
+local Environment = getgenv()
+local Unloading = false
+local AimbotFOVEnabled = true
+local AimbotFOVRadius = 120
+local SilentAimEnabled = false
+local LegitSilentAimEnabled = false
+local SilentAimPartName = "Head"
+local SilentAimTeamCheck = false
+local SilentAimWallbang = false
+local SilentAimUseFOV = false
+local SilentAimFOVRadius = 130
+local SilentAimTargetPart
+local RestoreSilentAimHook
+local CurrentTarget
+local TargetIndicator
+local TargetIndicatorEnabled = true
+local FOVCircle
+local FOVCircleVisible = true
+local Watermark
+local KeybindList
+local StaffList
+local WatermarkFeatureOrder = {"name", "version", "fps", "ping"}
+local WatermarkFeatures = {
+    name = true,
+    version = true,
+    fps = false,
+    ping = false
+}
+local WatermarkFPS = 0
+local WatermarkPing
+
+local function GetBloxstrikeCharacter(Player)
+    local Characters = workspace:FindFirstChild("Characters")
+    if not Characters then
+        return nil
+    end
+
+    return Characters:FindFirstChild(Player.Name)
+        or Characters:FindFirstChild(Player.Name, true)
+end
+
+local function GetBloxstrikeTeam(Player)
+    local Characters = workspace:FindFirstChild("Characters")
+    if not Characters then
+        return nil
+    end
+
+    local Character = GetBloxstrikeCharacter(Player)
+    local Terrorists = Characters:FindFirstChild("Terrorists")
+    local CounterTerrorists = Characters:FindFirstChild("Counter-Terrorists")
+
+    if Character and Terrorists and Character:IsDescendantOf(Terrorists) then
+        return "Terrorists"
+    end
+
+    if Character and CounterTerrorists and Character:IsDescendantOf(CounterTerrorists) then
+        return "Counter-Terrorists"
+    end
+
+    return nil
+end
+
+local function IsBloxstrikeSameTeam(LeftPlayer, RightPlayer)
+    local LeftTeam = GetBloxstrikeTeam(LeftPlayer)
+    local RightTeam = GetBloxstrikeTeam(RightPlayer)
+
+    if LeftTeam and RightTeam then
+        return LeftTeam == RightTeam
+    end
+
+    return LeftPlayer.Team ~= nil and LeftPlayer.Team == RightPlayer.Team
+end
+
+local SelfChamsEnabled = false
+local ArmChamsEnabled = false
+local SelfChamsColor = Color3.fromRGB(126, 192, 255)
+local ArmChamsColor = Color3.fromRGB(126, 192, 255)
+local ClearLocalChams
+
+local function RemoveMainESP()
+    if ESP and type(ESP.Unload) == "function" then
+        pcall(function()
+            ESP:Unload()
+        end)
+    end
+
+    pcall(function()
+        local ESPHolder = CoreGui:FindFirstChild("ESPHolder")
+        if ESPHolder then
+            ESPHolder:Destroy()
+        end
+    end)
+
+    if getgenv().OnixESP == ESP then
+        getgenv().OnixESP = nil
+    end
+end
+
+local function SetWatermarkItemVisibility(ItemName, Value)
+    local Item = Watermark and Watermark.Items and Watermark.Items[ItemName]
+    if not Item or not Item.Instance then
+        return
+    end
+
+    pcall(function()
+        Item.Instance.Visible = Value == true
+    end)
+end
+
+local function UpdateWatermark()
+    if not Watermark then
+        return
+    end
+
+    local SubText = {}
+    if WatermarkFeatures.version then
+        table.insert(SubText, "developer | Beta")
+    end
+    if WatermarkFeatures.fps then
+        table.insert(SubText, string.format("%d fps", WatermarkFPS))
+    end
+    if WatermarkFeatures.ping then
+        table.insert(SubText, string.format("%s ms", WatermarkPing and tostring(WatermarkPing) or "--"))
+    end
+
+    SetWatermarkItemVisibility("Title", WatermarkFeatures.name)
+    SetWatermarkItemVisibility("SubText", #SubText > 0)
+    pcall(function()
+        Watermark:SetSubText(table.concat(SubText, " | "))
+    end)
+end
+
+local function SetFOVCircleVisible(Value)
+    FOVCircleVisible = Value == true
+    if FOVCircle then
+        FOVCircle.Visible = FOVCircleVisible
+    end
+end
+
+do
+    Watermark = Window:Watermark({
+        Name = "Bloxstrike",
+        SubName = "developer | Beta"
+    })
+
+    KeybindList = Window:KeybindList({
+        Name = 'hot<font color="rgb(126, 192, 255)">keys</font>'
+    })
+
+    StaffList = Window:StaffList({
+        Name = 'staff<font color="rgb(0, 80, 255)"> list</font>'
+    })
+
+    StaffList:Add("Bigrig", "owner/dev")
+
+    TargetIndicator = Window:TargetIndicator({
+        Name = "target<font color='rgb(0, 80, 255)'> info</font>"
+    })
+    TargetIndicator:SetStatus("targeting")
+    TargetIndicator:SetVisibility(false)
+end
+
+do
+    local UserInputService = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    local TargetScanAccumulator = 0
+    local LastFOVCircleRadius
+
+    FOVCircle = Instance.new("Frame")
+    FOVCircle.Name = "BloxstrikeFOVCircle"
+    FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+    FOVCircle.BackgroundTransparency = 1
+    FOVCircle.BorderSizePixel = 0
+    FOVCircle.Size = UDim2.fromOffset(AimbotFOVRadius * 2, AimbotFOVRadius * 2)
+    FOVCircle.ZIndex = 100
+    FOVCircle.Parent = Library.Holder.Instance
+
+    local CircleCorner = Instance.new("UICorner")
+    CircleCorner.CornerRadius = UDim.new(1, 0)
+    CircleCorner.Parent = FOVCircle
+
+    local CircleStroke = Instance.new("UIStroke")
+    CircleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    CircleStroke.Color = Color3.fromRGB(126, 192, 255)
+    CircleStroke.Thickness = 1
+    CircleStroke.Transparency = 0.1
+    CircleStroke.Parent = FOVCircle
+    SetFOVCircleVisible(FOVCircleVisible)
+
+    local function GetAimTarget()
+        local Camera = workspace.CurrentCamera
+        if not Camera or not AimbotFOVEnabled then
+            return nil
+        end
+
+        local MouseLocation = UserInputService:GetMouseLocation()
+        local BestTarget, BestDistance = nil, AimbotFOVRadius
+
+        for _, Player in ipairs(Players:GetPlayers()) do
+            local SameTeam = IsBloxstrikeSameTeam(Player, LocalPlayer)
+            if Player ~= LocalPlayer and (not ESP.TeamCheck or not SameTeam) then
+                local Character = GetBloxstrikeCharacter(Player)
+                local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+                local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+                if Root and Humanoid and Humanoid.Health > 0 then
+                    local Point, OnScreen = Camera:WorldToViewportPoint(Root.Position)
+                    local WorldDistance = (Camera.CFrame.Position - Root.Position).Magnitude
+                    local ScreenDistance = (Vector2.new(Point.X, Point.Y) - MouseLocation).Magnitude
+                    if OnScreen and Point.Z > 0
+                        and ScreenDistance <= BestDistance
+                        and WorldDistance <= (ESP.MaxDistance * 3.5714285714)
+                    then
+                        BestTarget, BestDistance = Player, ScreenDistance
+                    end
+                end
+            end
+        end
+
+        return BestTarget
+    end
+
+    Library:Connect(RunService.RenderStepped, function(DeltaTime)
+        local MouseLocation = UserInputService:GetMouseLocation()
+        FOVCircle.Position = UDim2.fromOffset(MouseLocation.X, MouseLocation.Y)
+
+        if LastFOVCircleRadius ~= AimbotFOVRadius then
+            LastFOVCircleRadius = AimbotFOVRadius
+            FOVCircle.Size = UDim2.fromOffset(AimbotFOVRadius * 2, AimbotFOVRadius * 2)
+        end
+
+        if FOVCircle.Visible ~= FOVCircleVisible then
+            FOVCircle.Visible = FOVCircleVisible
+        end
+
+        TargetScanAccumulator = TargetScanAccumulator + DeltaTime
+        if TargetScanAccumulator < 0.1 then
+            return
+        end
+        TargetScanAccumulator = TargetScanAccumulator % 0.1
+
+        local NewTarget = GetAimTarget()
+        if NewTarget == CurrentTarget then
+            return
+        end
+
+        CurrentTarget = NewTarget
+        if not NewTarget then
+            TargetIndicator:ResetConnection()
+            TargetIndicator:SetVisibility(false)
+            return
+        end
+
+        TargetIndicator:SetStatus("targeting")
+        TargetIndicator:SetVisibility(TargetIndicatorEnabled)
+        task.spawn(function()
+            if CurrentTarget == NewTarget then
+                pcall(function()
+                    TargetIndicator:SetTarget(NewTarget)
+                end)
+            end
+        end)
+    end)
+end
+
+do
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local UserInputService = game:GetService("UserInputService")
+    local LocalPlayer = Players.LocalPlayer
+    local Workspace = game:GetService("Workspace")
+    local RaycastParameters = RaycastParams.new()
+    RaycastParameters.FilterType = Enum.RaycastFilterType.Exclude
+    RaycastParameters.IgnoreWater = true
+
+    local function IsSilentAimVisible(TargetPart, TargetCharacter)
+        if SilentAimWallbang then
+            return true
+        end
+
+        if not TargetPart or not TargetPart.Parent or not TargetCharacter then
+            return false
+        end
+
+        local LocalCharacter = GetBloxstrikeCharacter(LocalPlayer)
+        RaycastParameters.FilterDescendantsInstances = LocalCharacter and {LocalCharacter} or {}
+
+        local Origin = workspace.CurrentCamera and workspace.CurrentCamera.CFrame.Position
+        if not Origin then
+            return false
+        end
+
+        local Result = Workspace:Raycast(Origin, TargetPart.Position - Origin, RaycastParameters)
+        if not Result then
+            return true
+        end
+
+        return Result.Instance and Result.Instance:IsDescendantOf(TargetCharacter)
+    end
+
+    local function FindSilentTarget()
+        local Camera = workspace.CurrentCamera
+        local LocalCharacter = GetBloxstrikeCharacter(LocalPlayer)
+        if not SilentAimEnabled or not Camera or not LocalCharacter then
+            SilentAimTargetPart = nil
+            return
+        end
+
+        local LocalTeam = GetBloxstrikeTeam(LocalPlayer)
+        local ScreenCenter = Camera.ViewportSize / 2
+        local ClosestDistance = math.huge
+        local ClosestPart
+
+        for _, Player in ipairs(Players:GetPlayers()) do
+            if Player ~= LocalPlayer then
+                local Character = GetBloxstrikeCharacter(Player)
+                local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+                local PlayerTeam = GetBloxstrikeTeam(Player)
+                local SameTeam = LocalTeam ~= nil and PlayerTeam ~= nil and LocalTeam == PlayerTeam
+
+                if Character
+                    and Humanoid
+                    and Humanoid.Health > 0
+                    and not Character:GetAttribute("Dead")
+                    and not Character:GetAttribute("Invincible")
+                    and not (Character.Parent and Character.Parent.Name == "Debris")
+                    and (not SilentAimTeamCheck or not SameTeam)
+                then
+                    local CandidateParts = {}
+                    if LegitSilentAimEnabled then
+                        local HitboxNames = {
+                            head = true,
+                            torso = true,
+                            uppertorso = true,
+                            lowertorso = true,
+                            humanoidrootpart = true,
+                            ["left arm"] = true,
+                            ["right arm"] = true,
+                            ["left leg"] = true,
+                            ["right leg"] = true,
+                            leftupperarm = true,
+                            leftlowerarm = true,
+                            lefthand = true,
+                            rightupperarm = true,
+                            rightlowerarm = true,
+                            righthand = true,
+                            leftupperleg = true,
+                            leftlowerleg = true,
+                            leftfoot = true,
+                            rightupperleg = true,
+                            rightlowerleg = true,
+                            rightfoot = true
+                        }
+
+                        for _, Descendant in ipairs(Character:GetDescendants()) do
+                            local PartName = string.lower(Descendant.Name)
+                            if Descendant:IsA("BasePart")
+                                and (HitboxNames[PartName] or string.find(PartName, "hitbox", 1, true))
+                            then
+                                local Ancestor = Descendant.Parent
+                                local Excluded = false
+                                while Ancestor and Ancestor ~= Character do
+                                    if Ancestor:IsA("Accessory") or Ancestor:IsA("Tool") then
+                                        Excluded = true
+                                        break
+                                    end
+                                    Ancestor = Ancestor.Parent
+                                end
+
+                                if not Excluded then
+                                    table.insert(CandidateParts, Descendant)
+                                end
+                            end
+                        end
+                    else
+                        local TargetPart = Character:FindFirstChild(SilentAimPartName, true)
+                            or Character:FindFirstChild("Head", true)
+                            or Character:FindFirstChild("HumanoidRootPart", true)
+                            or Character.PrimaryPart
+                        if TargetPart and TargetPart:IsA("BasePart") then
+                            table.insert(CandidateParts, TargetPart)
+                        end
+                    end
+
+                    for _, TargetPart in ipairs(CandidateParts) do
+                        local ScreenPosition, OnScreen = Camera:WorldToViewportPoint(TargetPart.Position)
+                        if OnScreen and ScreenPosition.Z > 0 then
+                            local Distance = (Vector2.new(ScreenPosition.X, ScreenPosition.Y) - ScreenCenter).Magnitude
+                            local MaxRadius = SilentAimUseFOV and SilentAimFOVRadius or math.huge
+
+                            if Distance <= MaxRadius
+                                and Distance < ClosestDistance
+                                and IsSilentAimVisible(TargetPart, Character)
+                            then
+                                ClosestDistance = Distance
+                                ClosestPart = TargetPart
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        SilentAimTargetPart = ClosestPart
+    end
+
+    Library:Connect(RunService.RenderStepped, FindSilentTarget)
+
+    local SilentAimRaycastFunction
+    local SilentAimOldRaycastFunction
+    local SilentAimHookInstalled = false
+
+    local function InstallSilentAimHook()
+        if Unloading or SilentAimHookInstalled or type(hookfunction) ~= "function" or type(getgc) ~= "function" then
+            return SilentAimHookInstalled
+        end
+
+        local BulletClass
+        for _ = 1, 45 do
+            if Unloading then
+                return false
+            end
+
+            local Success, Garbage = pcall(getgc, true)
+            if Success and type(Garbage) == "table" then
+                for _, Object in next, Garbage do
+                    if type(Object) == "table"
+                        and type(rawget(Object, "_performRaycast")) == "function"
+                        and rawget(Object, "getTrueSpread") ~= nil
+                    then
+                        BulletClass = Object
+                        break
+                    end
+                end
+            end
+
+            if BulletClass then
+                break
+            end
+            task.wait(0.5)
+        end
+
+        SilentAimRaycastFunction = BulletClass and rawget(BulletClass, "_performRaycast")
+        if type(SilentAimRaycastFunction) ~= "function" then
+            return false
+        end
+
+        local OldRaycast
+        local Hook = function(...)
+            local Returns = table.pack(OldRaycast(...))
+            local Result = Returns[1]
+
+            if SilentAimEnabled and SilentAimTargetPart and type(Result) == "table" then
+                pcall(function()
+                    local Hits = rawget(Result, "Hits")
+                    if type(Hits) ~= "table" or not SilentAimTargetPart.Parent then
+                        return
+                    end
+
+                    local AimPosition = SilentAimTargetPart.Position
+                    local LastIndex
+                    for Index, Hit in pairs(Hits) do
+                        if type(Hit) == "table" and (LastIndex == nil or Index > LastIndex) then
+                            LastIndex = Index
+                        end
+                    end
+
+                    local FinalHit = LastIndex and Hits[LastIndex]
+                    if type(FinalHit) ~= "table" then
+                        return
+                    end
+
+                    FinalHit.Instance = SilentAimTargetPart
+                    FinalHit.Position = AimPosition
+                    if FinalHit.Exit ~= nil then
+                        FinalHit.Exit = false
+                    end
+
+                    local Origin = rawget(Result, "Origin")
+                    if typeof(Origin) == "Vector3" then
+                        local Delta = AimPosition - Origin
+                        local Length = Delta.Magnitude
+                        if Length > 0.001 then
+                            Result.Distance = Length
+                            Result.Direction = Delta.Unit
+
+                            local Unit = Delta.Unit
+                            for Index, Hit in pairs(Hits) do
+                                if Index ~= LastIndex
+                                    and type(Hit) == "table"
+                                    and typeof(Hit.Position) == "Vector3"
+                                then
+                                    local Along = (Hit.Position - Origin):Dot(Unit)
+                                    if Along > Length then
+                                        Hit.Position = Origin + Unit * (Length * 0.5)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+
+            return table.unpack(Returns, 1, Returns.n)
+        end
+
+        local Success, Previous = pcall(function()
+            return hookfunction(SilentAimRaycastFunction, Hook)
+        end)
+        if not Success or type(Previous) ~= "function" then
+            SilentAimRaycastFunction = nil
+            return false
+        end
+
+        SilentAimOldRaycastFunction = Previous
+        OldRaycast = Previous
+        SilentAimHookInstalled = true
+        return true
+    end
+
+    RestoreSilentAimHook = function()
+        if SilentAimHookInstalled
+            and type(hookfunction) == "function"
+            and SilentAimRaycastFunction
+            and SilentAimOldRaycastFunction
+        then
+            pcall(function()
+                hookfunction(SilentAimRaycastFunction, SilentAimOldRaycastFunction)
+            end)
+        end
+
+        SilentAimHookInstalled = false
+        SilentAimRaycastFunction = nil
+        SilentAimOldRaycastFunction = nil
+    end
+
+    task.spawn(function()
+        InstallSilentAimHook()
+    end)
+end
+
+do
+    local RunService = game:GetService("RunService")
+    local Stats = game:GetService("Stats")
+    local Elapsed = 0
+    local FrameCount = 0
+
+    local function GetWatermarkPing()
+        local Success, Ping = pcall(function()
+            local Network = Stats:FindFirstChild("Network")
+            local ServerStatsItem = Network and Network:FindFirstChild("ServerStatsItem")
+            local DataPing = ServerStatsItem and ServerStatsItem:FindFirstChild("Data Ping")
+            if not DataPing then
+                return nil
+            end
+            return tonumber(string.match(DataPing:GetValueString(), "%d+"))
+        end)
+        return Success and Ping or nil
+    end
+
+    Library:Connect(RunService.RenderStepped, function(DeltaTime)
+        Elapsed = Elapsed + DeltaTime
+        FrameCount = FrameCount + 1
+        if Elapsed < 0.5 then
+            return
+        end
+
+        WatermarkFPS = math.floor(FrameCount / Elapsed + 0.5)
+        WatermarkPing = GetWatermarkPing()
+        Elapsed = 0
+        FrameCount = 0
+        UpdateWatermark()
+    end)
+
+    UpdateWatermark()
+end
+
+local VisualsPage = Window:Page({Name = "visuals"})
+
+do
+    local Main = VisualsPage:Section({Name = "esp", Side = 1})
+
+    Main:Toggle({
+        Name = "master esp",
+        Flag = "esp_enabled",
+        Default = ESP.Enabled,
+        Callback = function(Value)
+            ESP.Enabled = Value
+        end
+    })
+
+
+    Main:Toggle({
+        Name = "self esp",
+        Flag = "esp_self",
+        Default = ESP.SelfCheck == true,
+        Callback = function(Value)
+            ESP.SelfCheck = Value == true
+        end
+    })
+
+    Main:Toggle({
+        Name = "team check",
+        Flag = "esp_team_check",
+        Default = ESP.TeamCheck,
+        Callback = function(Value)
+            ESP.TeamCheck = Value
+        end
+    })
+
+    Main:Toggle({
+        Name = "fade on distance",
+        Flag = "esp_fade_distance",
+        Default = ESP.FadeOut.OnDistance,
+        Callback = function(Value)
+            ESP.FadeOut.OnDistance = Value
+        end
+    })
+
+    Main:Toggle({
+        Name = "friend tag",
+        Flag = "esp_friend_tag",
+        Default = ESP.Options.Friendcheck,
+        Callback = function(Value)
+            ESP.Options.Friendcheck = Value
+        end
+    })
+
+    Main:Slider({
+        Name = "max distance",
+        Flag = "esp_max_distance",
+        Min = 50,
+        Max = 1000,
+        Default = ESP.MaxDistance,
+        Decimals = 1,
+        Suffix = "m",
+        Callback = function(Value)
+            ESP.MaxDistance = Value
+        end
+    })
+
+    Main:Slider({
+        Name = "esp update rate",
+        Flag = "esp_update_rate",
+        Min = 10,
+        Max = 30,
+        Default = ESP.UpdateRate,
+        Decimals = 1,
+        Suffix = "hz",
+        Callback = function(Value)
+            ESP.UpdateRate = Value
+        end
+    })
+
+    Main:Slider({
+        Name = "font size",
+        Flag = "esp_font_size",
+        Min = 8,
+        Max = 20,
+        Default = ESP.FontSize,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.FontSize = Value
+        end
+    })
+
+    local Boxes = VisualsPage:Section({Name = "boxes", Side = 1})
+
+    Boxes:Toggle({
+        Name = "corner box",
+        Flag = "esp_corner_box",
+        Default = ESP.Drawing.Boxes.Corner.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Corner.Enabled = Value
+        end
+    })
+
+    Boxes:Toggle({
+        Name = "box outline",
+        Flag = "esp_box_outline",
+        Default = ESP.Drawing.Boxes.Full.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Full.Enabled = Value
+        end
+    })
+
+    Boxes:Toggle({
+        Name = "filled box",
+        Flag = "esp_filled_box",
+        Default = ESP.Drawing.Boxes.Filled.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.Enabled = Value
+        end
+    })
+
+    Boxes:Dropdown({
+        Name = "outline mode",
+        Flag = "esp_box_outline_mode",
+        Items = {"solid", "gradient"},
+        Default = ESP.Drawing.Boxes.Gradient and "gradient" or "solid",
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Gradient = Value == "gradient"
+        end
+    })
+
+    Boxes:Dropdown({
+        Name = "fill mode",
+        Flag = "esp_box_fill_mode",
+        Items = {"solid", "gradient"},
+        Default = ESP.Drawing.Boxes.GradientFill and "gradient" or "solid",
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFill = Value == "gradient"
+        end
+    })
+
+    Boxes:Slider({
+        Name = "fill transparency",
+        Flag = "esp_fill_transparency",
+        Min = 0,
+        Max = 1,
+        Default = ESP.Drawing.Boxes.Filled.Transparency,
+        Decimals = 0.01,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.Transparency = Value
+        end
+    })
+
+    Boxes:Toggle({
+        Name = "fill animation",
+        Flag = "esp_fill_animation",
+        Default = ESP.Drawing.Boxes.Animate,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Animate = Value
+        end
+    })
+
+    Boxes:Slider({
+        Name = "rotation speed",
+        Flag = "esp_rotation_speed",
+        Min = 0,
+        Max = 600,
+        Default = ESP.Drawing.Boxes.RotationSpeed,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.RotationSpeed = Value
+        end
+    })
+
+    local Info = VisualsPage:Section({Name = "info", Side = 2})
+
+    Info:Toggle({
+        Name = "names",
+        Flag = "esp_names",
+        Default = ESP.Drawing.Names.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Names.Enabled = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "distance",
+        Flag = "esp_distance",
+        Default = ESP.Drawing.Distances.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Distances.Enabled = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "flags",
+        Flag = "esp_flags",
+        Default = ESP.Drawing.Flags.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Flags.Enabled = Value
+        end
+    })
+
+    Info:Dropdown({
+        Name = "distance position",
+        Flag = "esp_distance_position",
+        Items = {"Text", "Bottom"},
+        Default = ESP.Drawing.Distances.Position,
+        Callback = function(Value)
+            ESP.Drawing.Distances.Position = Value
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon text",
+        Flag = "weapon_text",
+        Default = ESP.Drawing.Weapons.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Enabled = Value
+
+            if Value and Library.SetFlags["weapon_icons"] then
+                Library.SetFlags["weapon_icons"](false)
+            end
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon icons",
+        Flag = "weapon_icons",
+        Default = ESP.Drawing.Weapons.Icons,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Icons = Value
+
+            if Value and Library.SetFlags["weapon_text"] then
+                Library.SetFlags["weapon_text"](false)
+            end
+        end
+    })
+
+    Info:Toggle({
+        Name = "weapon gradient",
+        Flag = "esp_weapon_gradient",
+        Default = ESP.Drawing.Weapons.Gradient,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.Gradient = Value
+        end
+    })
+
+    local Health = VisualsPage:Section({Name = "health", Side = 2})
+
+    Health:Toggle({
+        Name = "health bar",
+        Flag = "esp_health_bar",
+        Default = ESP.Drawing.Healthbar.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Enabled = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health text",
+        Flag = "esp_health_text",
+        Default = ESP.Drawing.Healthbar.HealthText,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.HealthText = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health lerp",
+        Flag = "esp_health_lerp",
+        Default = ESP.Drawing.Healthbar.Lerp,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Lerp = Value
+        end
+    })
+
+    Health:Toggle({
+        Name = "health gradient",
+        Flag = "esp_health_gradient",
+        Default = ESP.Drawing.Healthbar.Gradient,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Gradient = Value
+        end
+    })
+
+    Health:Slider({
+        Name = "health width",
+        Flag = "esp_health_width",
+        Min = 1,
+        Max = 8,
+        Default = ESP.Drawing.Healthbar.Width,
+        Decimals = 0.1,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.Width = Value
+        end
+    })
+
+    local Chams = VisualsPage:Section({Name = "chams", Side = 2})
+
+    Chams:Toggle({
+        Name = "chams",
+        Flag = "esp_enemy_chams",
+        Default = ESP.Drawing.Chams.Enabled,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Enabled = Value
+        end
+    })
+
+    Chams:Toggle({
+        Name = "thermal",
+        Flag = "esp_thermal",
+        Default = ESP.Drawing.Chams.Thermal,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Thermal = Value
+        end
+    })
+
+    Chams:Dropdown({
+        Name = "occlusion chams",
+        Flag = "esp_occlusion",
+        Items = {"occluded", "always on top"},
+        Default = ESP.Drawing.Chams.VisibleCheck and "occluded" or "always on top",
+        Callback = function(Value)
+            local Occluded = Value == "occluded"
+            ESP.Drawing.Chams.VisibleCheck = Occluded
+            ESP.Drawing.Chams.Mode = Occluded and "VisibleOnly" or "VisibleAndHidden"
+        end
+    })
+
+    Chams:Slider({
+        Name = "fill transparency",
+        Flag = "esp_chams_fill_transparency",
+        Min = 0,
+        Max = 100,
+        Default = ESP.Drawing.Chams.Fill_Transparency,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Fill_Transparency = Value
+        end
+    })
+
+    Chams:Slider({
+        Name = "outline transparency",
+        Flag = "esp_chams_outline_transparency",
+        Min = 0,
+        Max = 100,
+        Default = ESP.Drawing.Chams.Outline_Transparency,
+        Decimals = 1,
+        Callback = function(Value)
+            ESP.Drawing.Chams.Outline_Transparency = Value
+        end
+    })
+
+    local LocalChamsHighlights = {}
+    local LocalChamsRefresh = 0
+    local LocalChamsPlayer = game:GetService("Players").LocalPlayer
+
+    ClearLocalChams = function()
+        for Part, Highlight in pairs(LocalChamsHighlights) do
+            pcall(function()
+                Highlight:Destroy()
+            end)
+            LocalChamsHighlights[Part] = nil
+        end
+    end
+
+    local function IsExcludedLocalPart(Part, Root)
+        local Ancestor = Part.Parent
+        while Ancestor and Ancestor ~= Root do
+            if Ancestor:IsA("Tool")
+                or Ancestor:IsA("Accessory")
+                or Ancestor.Name == "Item"
+                or Ancestor.Name == "Weapon"
+            then
+                return true
+            end
+            Ancestor = Ancestor.Parent
+        end
+        return false
+    end
+
+    local function IsArmPart(Part, Viewmodel)
+        local PartName = string.lower(Part.Name)
+        if string.find(PartName, "arm", 1, true) or string.find(PartName, "hand", 1, true) then
+            return true
+        end
+
+        local Ancestor = Part.Parent
+        while Ancestor and Ancestor ~= Viewmodel do
+            if Ancestor:IsA("Model")
+                and (Ancestor:FindFirstChild("LL") or Ancestor:FindFirstChild("LH"))
+            then
+                return true
+            end
+            Ancestor = Ancestor.Parent
+        end
+
+        return false
+    end
+
+    local function AddLocalChams(Part, Color)
+        local Highlight = LocalChamsHighlights[Part]
+        if not Highlight or not Highlight.Parent then
+            Highlight = Instance.new("Highlight")
+            Highlight.Name = "TypeshitLocalChams"
+            Highlight.Parent = Library.Holder.Instance
+            LocalChamsHighlights[Part] = Highlight
+        end
+
+        Highlight.Adornee = Part
+        Highlight.FillColor = Color
+        Highlight.OutlineColor = Color
+        Highlight.FillTransparency = 0.35
+        Highlight.OutlineTransparency = 0
+        Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    end
+
+    local function UpdateLocalChams(DeltaTime)
+        LocalChamsRefresh = LocalChamsRefresh + DeltaTime
+        if LocalChamsRefresh < 0.1 then
+            return
+        end
+        LocalChamsRefresh = 0
+
+        if not SelfChamsEnabled and not ArmChamsEnabled then
+            if next(LocalChamsHighlights) then
+                ClearLocalChams()
+            end
+            return
+        end
+
+        local Desired = {}
+        local Character = GetBloxstrikeCharacter(LocalChamsPlayer)
+        if SelfChamsEnabled and Character then
+            for _, Part in ipairs(Character:GetDescendants()) do
+                if Part:IsA("BasePart")
+                    and Part.Transparency < 1
+                    and not IsExcludedLocalPart(Part, Character)
+                then
+                    Desired[Part] = true
+                    AddLocalChams(Part, SelfChamsColor)
+                end
+            end
+        end
+
+        if ArmChamsEnabled then
+            local Camera = workspace.CurrentCamera
+            local Viewmodel = Camera and Camera:FindFirstChildOfClass("Model")
+            if Viewmodel then
+                for _, Part in ipairs(Viewmodel:GetDescendants()) do
+                    if Part:IsA("BasePart")
+                        and Part.Transparency < 1
+                        and IsArmPart(Part, Viewmodel)
+                    then
+                        Desired[Part] = true
+                        AddLocalChams(Part, ArmChamsColor)
+                    end
+                end
+            end
+        end
+
+        for Part, Highlight in pairs(LocalChamsHighlights) do
+            if not Desired[Part] or not Part.Parent then
+                pcall(function()
+                    Highlight:Destroy()
+                end)
+                LocalChamsHighlights[Part] = nil
+            end
+        end
+    end
+
+    Library:Connect(game:GetService("RunService").RenderStepped, UpdateLocalChams)
+
+    Chams:Toggle({
+        Name = "self chams",
+        Flag = "self_chams",
+        Default = false,
+        Callback = function(Value)
+            SelfChamsEnabled = Value == true
+        end
+    })
+
+    Chams:Toggle({
+        Name = "arm chams",
+        Flag = "arm_chams",
+        Default = false,
+        Callback = function(Value)
+            ArmChamsEnabled = Value == true
+        end
+    })
+
+    Chams:Label({Name = "self color"}):Colorpicker({
+        Default = SelfChamsColor,
+        Callback = function(Value)
+            if typeof(Value) == "Color3" then
+                SelfChamsColor = Value
+            end
+        end
+    })
+
+    Chams:Label({Name = "arm color"}):Colorpicker({
+        Default = ArmChamsColor,
+        Callback = function(Value)
+            if typeof(Value) == "Color3" then
+                ArmChamsColor = Value
+            end
+        end
+    })
+
+    local Colors = VisualsPage:Section({Name = "colors", Side = 1})
+
+    Colors:Label({Name = "box outline"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Full.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Full.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "box corners"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Corner.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Corner.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "box fill"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.Filled.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.Filled.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "outline gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "outline gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "fill gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientFillRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFillRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "fill gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Boxes.GradientFillRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Boxes.GradientFillRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "name"}):Colorpicker({
+        Default = ESP.Drawing.Names.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Names.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "distance"}):Colorpicker({
+        Default = ESP.Drawing.Distances.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Distances.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "friend tag"}):Colorpicker({
+        Default = ESP.Options.FriendcheckRGB,
+        Callback = function(Value)
+            ESP.Options.FriendcheckRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon text"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.WeaponTextRGB,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.WeaponTextRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon icon"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.RGB,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.RGB = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon gradient 1"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "weapon gradient 2"}):Colorpicker({
+        Default = ESP.Drawing.Weapons.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Weapons.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "health text"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.HealthTextRGB,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.HealthTextRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "health low"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB1,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB1 = Value
+        end
+    })
+
+    Colors:Label({Name = "health mid"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB2,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB2 = Value
+        end
+    })
+
+    Colors:Label({Name = "health high"}):Colorpicker({
+        Default = ESP.Drawing.Healthbar.GradientRGB3,
+        Callback = function(Value)
+            ESP.Drawing.Healthbar.GradientRGB3 = Value
+        end
+    })
+
+    Colors:Label({Name = "chams fill"}):Colorpicker({
+        Default = ESP.Drawing.Chams.FillRGB,
+        Callback = function(Value)
+            ESP.Drawing.Chams.FillRGB = Value
+        end
+    })
+
+    Colors:Label({Name = "chams outline"}):Colorpicker({
+        Default = ESP.Drawing.Chams.OutlineRGB,
+        Callback = function(Value)
+            ESP.Drawing.Chams.OutlineRGB = Value
+        end
+    })
+
+    -- Keep the ESP object synchronized with the UI flags as well as the
+    -- individual callbacks. This also makes loaded configs apply reliably.
+    local ESPMenuRefresh = 0
+    local function SyncESPFromMenu()
+        local Flags = Library.Flags
+
+        if type(Flags.esp_enabled) == "boolean" then
+            ESP.Enabled = Flags.esp_enabled
+        end
+        if type(Flags.esp_team_check) == "boolean" then
+            ESP.TeamCheck = Flags.esp_team_check
+        end
+        if type(Flags.esp_self) == "boolean" then
+            ESP.SelfCheck = Flags.esp_self
+        end
+        if type(Flags.esp_fade_distance) == "boolean" then
+            ESP.FadeOut.OnDistance = Flags.esp_fade_distance
+        end
+        if type(Flags.esp_friend_tag) == "boolean" then
+            ESP.Options.Friendcheck = Flags.esp_friend_tag
+        end
+
+        if type(Flags.esp_max_distance) == "number" then
+            ESP.MaxDistance = Flags.esp_max_distance
+        end
+        if type(Flags.esp_update_rate) == "number" then
+            ESP.UpdateRate = Flags.esp_update_rate
+        end
+        if type(Flags.esp_font_size) == "number" then
+            ESP.FontSize = Flags.esp_font_size
+        end
+
+        if type(Flags.esp_corner_box) == "boolean" then
+            ESP.Drawing.Boxes.Corner.Enabled = Flags.esp_corner_box
+        end
+        if type(Flags.esp_box_outline) == "boolean" then
+            ESP.Drawing.Boxes.Full.Enabled = Flags.esp_box_outline
+        end
+        if type(Flags.esp_filled_box) == "boolean" then
+            ESP.Drawing.Boxes.Filled.Enabled = Flags.esp_filled_box
+        end
+        if type(Flags.esp_box_outline_mode) == "string" then
+            ESP.Drawing.Boxes.Gradient = Flags.esp_box_outline_mode == "gradient"
+        end
+        if type(Flags.esp_box_fill_mode) == "string" then
+            ESP.Drawing.Boxes.GradientFill = Flags.esp_box_fill_mode == "gradient"
+        end
+        if type(Flags.esp_fill_transparency) == "number" then
+            ESP.Drawing.Boxes.Filled.Transparency = Flags.esp_fill_transparency
+        end
+        if type(Flags.esp_fill_animation) == "boolean" then
+            ESP.Drawing.Boxes.Animate = Flags.esp_fill_animation
+        end
+        if type(Flags.esp_rotation_speed) == "number" then
+            ESP.Drawing.Boxes.RotationSpeed = Flags.esp_rotation_speed
+        end
+
+        if type(Flags.esp_names) == "boolean" then
+            ESP.Drawing.Names.Enabled = Flags.esp_names
+        end
+        if type(Flags.esp_distance) == "boolean" then
+            ESP.Drawing.Distances.Enabled = Flags.esp_distance
+        end
+        if type(Flags.esp_flags) == "boolean" then
+            ESP.Drawing.Flags.Enabled = Flags.esp_flags
+        end
+        if type(Flags.esp_distance_position) == "string" then
+            ESP.Drawing.Distances.Position = Flags.esp_distance_position
+        end
+        if type(Flags.weapon_text) == "boolean" then
+            ESP.Drawing.Weapons.Enabled = Flags.weapon_text
+        end
+        if type(Flags.weapon_icons) == "boolean" then
+            ESP.Drawing.Weapons.Icons = Flags.weapon_icons
+        end
+        if type(Flags.esp_weapon_gradient) == "boolean" then
+            ESP.Drawing.Weapons.Gradient = Flags.esp_weapon_gradient
+        end
+
+        if type(Flags.esp_health_bar) == "boolean" then
+            ESP.Drawing.Healthbar.Enabled = Flags.esp_health_bar
+        end
+        if type(Flags.esp_health_text) == "boolean" then
+            ESP.Drawing.Healthbar.HealthText = Flags.esp_health_text
+        end
+        if type(Flags.esp_health_lerp) == "boolean" then
+            ESP.Drawing.Healthbar.Lerp = Flags.esp_health_lerp
+        end
+        if type(Flags.esp_health_gradient) == "boolean" then
+            ESP.Drawing.Healthbar.Gradient = Flags.esp_health_gradient
+        end
+        if type(Flags.esp_health_width) == "number" then
+            ESP.Drawing.Healthbar.Width = Flags.esp_health_width
+        end
+
+        if type(Flags.esp_enemy_chams) == "boolean" then
+            ESP.Drawing.Chams.Enabled = Flags.esp_enemy_chams
+        end
+        if type(Flags.esp_thermal) == "boolean" then
+            ESP.Drawing.Chams.Thermal = Flags.esp_thermal
+        end
+        if type(Flags.esp_occlusion) == "string" then
+            local Occluded = Flags.esp_occlusion == "occluded"
+            ESP.Drawing.Chams.VisibleCheck = Occluded
+            ESP.Drawing.Chams.Mode = Occluded and "VisibleOnly" or "VisibleAndHidden"
+        end
+        if type(Flags.esp_chams_fill_transparency) == "number" then
+            ESP.Drawing.Chams.Fill_Transparency = Flags.esp_chams_fill_transparency
+        end
+        if type(Flags.esp_chams_outline_transparency) == "number" then
+            ESP.Drawing.Chams.Outline_Transparency = Flags.esp_chams_outline_transparency
+        end
+    end
+
+    SyncESPFromMenu()
+    Library:Connect(game:GetService("RunService").RenderStepped, function(DeltaTime)
+        ESPMenuRefresh = ESPMenuRefresh + DeltaTime
+        if ESPMenuRefresh < 0.1 then
+            return
+        end
+
+        ESPMenuRefresh = 0
+        SyncESPFromMenu()
+    end)
+end
+
+local function UnloadAll()
+    if Unloading then
+        return
+    end
+    Unloading = true
+    Environment.TypeshitCleanup = nil
+    SilentAimEnabled = false
+    LegitSilentAimEnabled = false
+    SilentAimTargetPart = nil
+    if RestoreSilentAimHook then
+        pcall(RestoreSilentAimHook)
+    end
+    SelfChamsEnabled = false
+    ArmChamsEnabled = false
+    if ClearLocalChams then
+        pcall(ClearLocalChams)
+    end
+    CurrentTarget = nil
+    if TargetIndicator then
+        pcall(function()
+            TargetIndicator:ResetConnection()
+            TargetIndicator:SetVisibility(false)
+        end)
+    end
+    SetFOVCircleVisible(false)
+    if FOVCircle then
+        pcall(function()
+            FOVCircle:Destroy()
+        end)
+        FOVCircle = nil
+    end
+    RemoveMainESP()
+    pcall(function()
+        Library:Exit()
+    end)
+end
+
+Environment.TypeshitCleanup = UnloadAll
+
+local AimbotPage = Window:Page({Name = "aimbot"})
+
+do
+    local FOVSection = AimbotPage:Section({Name = "fov", Side = 1})
+
+    FOVSection:Toggle({
+        Name = "aimbot fov",
+        Flag = "aimbot_fov",
+        Default = true,
+        Callback = function(Value)
+            AimbotFOVEnabled = Value == true
+            SetFOVCircleVisible(AimbotFOVEnabled)
+            if not AimbotFOVEnabled then
+                CurrentTarget = nil
+                TargetIndicator:ResetConnection()
+                TargetIndicator:SetVisibility(false)
+            end
+        end
+    })
+
+    FOVSection:Slider({
+        Name = "fov size",
+        Flag = "aimbot_fov_size",
+        Min = 25,
+        Max = 500,
+        Default = 120,
+        Decimals = 1,
+        Suffix = "px",
+        Callback = function(Value)
+            AimbotFOVRadius = Value
+        end
+    })
+end
+
+do
+    local SilentAimSection = AimbotPage:Section({Name = "silent aim", Side = 2})
+
+    SilentAimSection:Toggle({
+        Name = "silent aim",
+        Flag = "silent_aim",
+        Default = false,
+        Callback = function(Value)
+            SilentAimEnabled = Value == true
+            if not SilentAimEnabled then
+                SilentAimTargetPart = nil
+            end
+        end
+    })
+
+    SilentAimSection:Toggle({
+        Name = "legit silent aim",
+        Flag = "legit_silent_aim",
+        Default = false,
+        Callback = function(Value)
+            LegitSilentAimEnabled = Value == true
+        end
+    })
+
+    SilentAimSection:Toggle({
+        Name = "team check",
+        Flag = "silent_aim_team_check",
+        Default = false,
+        Callback = function(Value)
+            SilentAimTeamCheck = Value == true
+        end
+    })
+
+    SilentAimSection:Toggle({
+        Name = "wallbang",
+        Flag = "silent_aim_wallbang",
+        Default = false,
+        Callback = function(Value)
+            SilentAimWallbang = Value == true
+        end
+    })
+
+    SilentAimSection:Dropdown({
+        Name = "aim part",
+        Flag = "silent_aim_part",
+        Items = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"},
+        Default = "Head",
+        Callback = function(Value)
+            if type(Value) == "string" then
+                SilentAimPartName = Value
+            end
+        end
+    })
+
+    SilentAimSection:Toggle({
+        Name = "use fov",
+        Flag = "silent_aim_use_fov",
+        Default = false,
+        Callback = function(Value)
+            SilentAimUseFOV = Value == true
+        end
+    })
+
+    SilentAimSection:Slider({
+        Name = "fov",
+        Flag = "silent_aim_fov",
+        Min = 25,
+        Max = 500,
+        Default = 130,
+        Decimals = 1,
+        Suffix = "px",
+        Callback = function(Value)
+            SilentAimFOVRadius = Value
+        end
+    })
+end
+
+local UIPage = Window:Page({Name = "ui"})
+
+do
+    local function SetElementVisibility(Element, ItemName, Value)
+        if Element and Element.Items and Element.Items[ItemName] then
+            pcall(function()
+                Element.Items[ItemName].Instance.Visible = Value == true
+            end)
+        end
+    end
+
+    local ElementsSection = UIPage:Section({Name = "elements", Side = 1})
+
+    ElementsSection:Toggle({
+        Name = "watermark",
+        Flag = "ui_watermark",
+        Default = true,
+        Callback = function(Value)
+            SetElementVisibility(Watermark, "Watermark", Value)
+        end
+    })
+
+    ElementsSection:Toggle({
+        Name = "hotkeys list",
+        Flag = "ui_hotkeys",
+        Default = true,
+        Callback = function(Value)
+            SetElementVisibility(KeybindList, "KeybindList", Value)
+        end
+    })
+
+    ElementsSection:Toggle({
+        Name = "staff list",
+        Flag = "ui_staff_list",
+        Default = true,
+        Callback = function(Value)
+            SetElementVisibility(StaffList, "StaffList", Value)
+        end
+    })
+
+    ElementsSection:Toggle({
+        Name = "target viewer",
+        Flag = "ui_target_viewer",
+        Default = true,
+        Callback = function(Value)
+            TargetIndicatorEnabled = Value == true
+            if TargetIndicator then
+                TargetIndicator:SetVisibility(TargetIndicatorEnabled and CurrentTarget ~= nil)
+            end
+        end
+    })
+
+    local WatermarkSection = UIPage:Section({Name = "watermark editor", Side = 1})
+
+    WatermarkSection:Dropdown({
+        Name = "show features",
+        Flag = "ui_watermark_features",
+        Items = WatermarkFeatureOrder,
+        Multi = true,
+        Default = {"name", "version"},
+        Callback = function(Value)
+            local Selected = {}
+            if type(Value) == "table" then
+                for _, Feature in ipairs(Value) do
+                    Selected[Feature] = true
+                end
+            end
+
+            for _, Feature in ipairs(WatermarkFeatureOrder) do
+                WatermarkFeatures[Feature] = Selected[Feature] == true
+            end
+            UpdateWatermark()
+        end
+    })
+end
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local MiscPage = Window:Page({
+    Name = "misc"
+})
+
+local ExploitSection = MiscPage:Section({
+    Name = "Exploits",
+    side = 1
+})
+
+
+
+
+
+
+
+do -- configs
+    local ConfigsSection = MiscPage:Section({Name = "configs", Side = 2})
+        local ConfigsFolder = Library.Directory .. Library.Folders.Configs .. "/"
+        local ConfigSelected
+        local ConfigName
+
+        local function HasFileApi()
+            return type(isfile) == "function"
+                and type(readfile) == "function"
+                and type(writefile) == "function"
+                and type(delfile) == "function"
+        end
+
+        local function IsSafeConfigName(Name)
+            return type(Name) == "string"
+                and Name ~= ""
+                and not string.find(Name, "[/\\\\]")
+                and not string.find(Name, "%.%.")
+        end
+
+        local ConfigsDropdown = ConfigsSection:Dropdown({
+            Name = "configs",
+            Flag = "configs_dropdown",
+            Items = { },
+            Multi = false,
+            Callback = function(Value)
+                ConfigSelected = Value
+            end
+        })
+
+        ConfigsSection:Textbox({
+            Flag = "config_name",
+            Placeholder = "",
+            Callback = function(Value)
+                ConfigName = Value
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "create",
+            Callback = function()
+                if not HasFileApi() then
+                    Library:Notification{Name = "file API unavailable", Time = 3}
+                    return
+                end
+
+                if not IsSafeConfigName(ConfigName) then
+                    Library:Notification{Name = "invalid config name", Time = 3}
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local Config = Library:GetConfig()
+                    assert(type(Config) == "string", "failed to serialize config")
+                    writefile(ConfigsFolder .. ConfigName .. ".json", Config)
+                    Library:GetConfigsList(ConfigsDropdown)
+                end)
+
+                if Success then
+                    Library:Notification{Name = "created config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to create config: " .. tostring(Error), Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "delete",
+            Callback = function()
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
+
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    delfile(Path)
+                    Library:GetConfigsList(ConfigsDropdown)
+                end)
+
+                if Success then
+                    Library:Notification{Name = "deleted config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to delete config: " .. tostring(Error), Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "load",
+            Callback = function()
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
+
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local ConfigContent = readfile(Path)
+                    local Loaded, LoadError = Library:LoadConfig(ConfigContent)
+                    assert(Loaded, LoadError or "unknown config error")
+                end)
+
+                if Success then
+                    Library:Notification{Name = "loaded config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to load config: " .. tostring(Error), Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "save",
+            Callback = function()
+                if not HasFileApi() or type(ConfigSelected) ~= "string" then
+                    return
+                end
+
+                local Path = ConfigsFolder .. ConfigSelected .. ".json"
+                if not isfile(Path) then
+                    return
+                end
+
+                local Success, Error = pcall(function()
+                    local Config = Library:GetConfig()
+                    assert(type(Config) == "string", "failed to serialize config")
+                    writefile(Path, Config)
+                end)
+
+                if Success then
+                    Library:Notification{Name = "saved config successfully", Time = 3}
+                else
+                    Library:Notification{Name = "failed to save config: " .. tostring(Error), Time = 3}
+                end
+            end
+        })
+
+        ConfigsSection:Button({
+            Name = "refresh",
+            Callback = function()
+                Library:GetConfigsList(ConfigsDropdown)
+            end
+        })
+
+        pcall(function()
+            Library:GetConfigsList(ConfigsDropdown)
+        end)
+end
+do -- server
+    local Copy = setclipboard or toclipboard
+    local TeleportService = game:GetService("TeleportService")
+    local Players = game:GetService("Players")
+
+    local ServerSection = MiscPage:Section({Name = "server", Side = 2})
+        ServerSection:Button({
+            Name = "rejoin",
+            Callback = function()
+                local LocalPlayer = Players.LocalPlayer
+
+                if #Players:GetPlayers() <= 1 then
+                    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                else
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                end
+            end
+        })
+
+        ServerSection:Button({
+            Name = "copy server id",
+            Callback = function()
+                if not Copy then
+                    return
+                end
+
+                -- lua code that joins the copied game and server when executed
+                Copy(string.format(
+                    'game:GetService("TeleportService"):TeleportToPlaceInstance(%d, "%s", game:GetService("Players").LocalPlayer)',
+                    game.PlaceId,
+                    game.JobId
+                ))
+
+                Library:Notification{Name = "copied server join code", Time = 3}
+            end
+        })
+
+        ServerSection:Button({
+            Name = "copy game id",
+            Callback = function()
+                if not Copy then
+                    return
+                end
+
+                Copy(tostring(game.PlaceId))
+
+                Library:Notification{Name = "copied game id", Time = 3}
+            end
+        })
+end
+do -- other
+    local OtherSection = MiscPage:Section({Name = "other", Side = 2})
+        OtherSection:Button({
+            Name = "unload",
+            Callback = function()
+                UnloadAll()
+            end
+        })
+
+        OtherSection:Label({Name = "ui bind"}):Keybind({Flag = "uibind", Mode = "Toggle", Default = Enum.KeyCode.RightShift, Callback = function(Value)
+            local BindState = Library.Flags["uibind"]
+            if BindState and BindState.Key then
+                Library.MenuKeybind = BindState.Key
+            end
+        end})
+
+        OtherSection:Dropdown({
+            Name = "animation style",
+            Items = {"Linear", "Quad", "Quart", "Back", "Bounce", "Circular", "Cubic", "Elastic", "Exponential", "Sine", "Quint"},
+            Default = "Cubic",
+            Callback = function(Value)
+                Library.Animation.Style = Value
+            end
+        })
+
+        OtherSection:Dropdown({
+            Name = "animation direction",
+            Items = {"In", "Out", "InOut"},
+            Default = "Out",
+            Callback = function(Value)
+                Library.Animation.Direction = Value
+            end
+        })
+
+        OtherSection:Slider({
+            Name = "animation time",
+            Min = 0,
+            Max = 1,
+            Default = 0.25,
+            Decimals = 0.01,
+            Suffix = "s",
+            Callback = function(Value)
+                Library.Animation.Time = Value
+            end
+        })
+end
+
+Window:InitWindow()
+
+return Window
