@@ -11,6 +11,7 @@ local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game
 local ESP = {
     Enabled = true,
     TeamCheck = false,
+    SelfCheck = false,
     MaxDistance = 200,
     UpdateRate = 15,
     FontSize = 11,
@@ -497,6 +498,7 @@ do
     --
     function Functions:GetReplicatedPlayer(Player)
         local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+            or Workspace:FindFirstChild("Players")
         return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
     end
 
@@ -546,6 +548,49 @@ do
 
         if type(EquippedTool) == "string" and EquippedTool ~= "" then
             return EquippedTool
+        end
+
+        local function ExtractWeaponName(Name)
+            local WeaponName = string.match(Name, "^%x+%-%x+%-%x+%-%x+%-%x+(.+)$")
+            if not WeaponName then
+                WeaponName = string.match(Name, "([%a][%a%d]*_[%a][%a%d]*)$")
+            end
+
+            if WeaponName and string.find(WeaponName, "_", 1, true) then
+                return string.gsub(WeaponName, "_", " ")
+            end
+        end
+
+        local function ScanContainer(Container)
+            if not Container then
+                return nil
+            end
+
+            local Candidates = {}
+            local WeaponRig = Container:FindFirstChild("WeaponRig")
+            if WeaponRig then
+                for _, Child in ipairs(WeaponRig:GetChildren()) do
+                    table.insert(Candidates, Child)
+                end
+            end
+
+            for _, Child in ipairs(Container:GetChildren()) do
+                table.insert(Candidates, Child)
+            end
+
+            for _, Child in ipairs(Candidates) do
+                local Name = ExtractWeaponName(Child.Name)
+                if Name then
+                    return Name
+                end
+            end
+        end
+
+        local ReplicatedPlayer = Functions:GetReplicatedPlayer(Player)
+        local WeaponName = ScanContainer(Player and Player.Character)
+            or ScanContainer(ReplicatedPlayer)
+        if WeaponName then
+            return WeaponName
         end
 
         return "none"
@@ -1087,7 +1132,7 @@ do -- Initalize
                         end
 
                         -- Teamcheck
-                        local IsValidTarget = plr ~= lplayer
+                        local IsValidTarget = (ESP.SelfCheck or plr ~= lplayer)
                             and (not ESP.TeamCheck or ((lplayer.Team ~= plr.Team and plr.Team) or (not lplayer.Team and not plr.Team)))
                             and Character
                             and HRP
@@ -1636,6 +1681,7 @@ local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game
 local ESP = {
     Enabled = true,
     TeamCheck = false,
+    SelfCheck = false,
     MaxDistance = 200,
     FontSize = 11,
     FadeOut = {
@@ -2111,6 +2157,7 @@ do
     --
     function Functions:GetReplicatedPlayer(Player)
         local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+            or Workspace:FindFirstChild("Players")
         return PlayerFolder and PlayerFolder:FindFirstChild(Player.Name)
     end
 
@@ -2131,6 +2178,49 @@ do
 
         if type(EquippedTool) == "string" and EquippedTool ~= "" then
             return EquippedTool
+        end
+
+        local function ExtractWeaponName(Name)
+            local WeaponName = string.match(Name, "^%x+%-%x+%-%x+%-%x+%-%x+(.+)$")
+            if not WeaponName then
+                WeaponName = string.match(Name, "([%a][%a%d]*_[%a][%a%d]*)$")
+            end
+
+            if WeaponName and string.find(WeaponName, "_", 1, true) then
+                return string.gsub(WeaponName, "_", " ")
+            end
+        end
+
+        local function ScanContainer(Container)
+            if not Container then
+                return nil
+            end
+
+            local Candidates = {}
+            local WeaponRig = Container:FindFirstChild("WeaponRig")
+            if WeaponRig then
+                for _, Child in ipairs(WeaponRig:GetChildren()) do
+                    table.insert(Candidates, Child)
+                end
+            end
+
+            for _, Child in ipairs(Container:GetChildren()) do
+                table.insert(Candidates, Child)
+            end
+
+            for _, Child in ipairs(Candidates) do
+                local Name = ExtractWeaponName(Child.Name)
+                if Name then
+                    return Name
+                end
+            end
+        end
+
+        local ReplicatedPlayer = Functions:GetReplicatedPlayer(Player)
+        local WeaponName = ScanContainer(Player and Player.Character)
+            or ScanContainer(ReplicatedPlayer)
+        if WeaponName then
+            return WeaponName
         end
 
         return "none"
@@ -2631,7 +2721,7 @@ do -- Initalize
                         end
 
                         -- Teamcheck
-                        local IsValidTarget = plr ~= lplayer
+                        local IsValidTarget = (ESP.SelfCheck or plr ~= lplayer)
                             and (not ESP.TeamCheck or ((lplayer.Team ~= plr.Team and plr.Team) or (not lplayer.Team and not plr.Team)))
                             and Character
                             and HRP
