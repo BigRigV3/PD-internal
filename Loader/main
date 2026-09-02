@@ -1,1 +1,15 @@
+local projectdelta = "7336302630"
+local Zombiegame = "122789100578830"
 
+if game.PlaceId == tonumber(projectdelta) then 
+    print("GAME FOUND = PROJECT DELTA")
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/PD/internal.lua"))()
+    
+elseif game.PlaceId == tonumber(Zombiegame) then
+    print("GAME FOUND = ZOMBIE GAME")
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/internal"))()
+    
+else
+    game:GetService("Players").LocalPlayer:Kick("Not A Supported Game")
+    while wait(1) do end
+end
