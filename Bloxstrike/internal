@@ -9,33 +9,60 @@ local function LoadScript(Url, LocalPath)
     local Source
 
     if LocalPath and type(isfile) == "function" and type(readfile) == "function" then
-        local Ok, Result = pcall(function()
-            if isfile(LocalPath) then
-                return readfile(LocalPath)
-            end
-        end)
+        local LocalPaths = {LocalPath}
+        local NormalizedPath = string.gsub(LocalPath, "\\\\", "/")
+        local BaseName = string.match(NormalizedPath, "[^/]+$")
 
-        if Ok and type(Result) == "string" and #Result > 0 then
-            Source = Result
+        if NormalizedPath ~= LocalPath then
+            table.insert(LocalPaths, NormalizedPath)
+        end
+        if BaseName and BaseName ~= LocalPath then
+            table.insert(LocalPaths, BaseName)
+        end
+
+        for _, Path in ipairs(LocalPaths) do
+            local Ok, Result = pcall(function()
+                if isfile(Path) then
+                    return readfile(Path)
+                end
+            end)
+
+            if Ok and type(Result) == "string" and #Result > 0 then
+                Source = Result
+                break
+            end
         end
     end
 
-    for _ = 1, 3 do
+    local Urls = {Url}
+    local MainUrl = string.gsub(Url, "/refs/heads/main/", "/main/")
+    if MainUrl ~= Url then
+        table.insert(Urls, MainUrl)
+    end
+
+    for _, CandidateUrl in ipairs(Urls) do
+        for _ = 1, 3 do
+            if Source then
+                break
+            end
+
+            local Ok, Result = pcall(function()
+                return game:HttpGet(CandidateUrl)
+            end)
+            if Ok and type(Result) == "string" and #Result > 0 and not string.find(Result, "^%d%d%d: ") then
+                Source = Result
+                break
+            end
+            task.wait(1)
+        end
+
         if Source then
             break
         end
-
-        local Ok, Result = pcall(function()
-            return game:HttpGet(Url)
-        end)
-        if Ok and type(Result) == "string" and #Result > 0 and not string.find(Result, "^%d%d%d: " ) then
-            Source = Result
-            break
-        end
-        task.wait(1)
     end
-    assert(Source, "failed to download " .. Url)
-    if string.find(Url, "/esplib$") then
+
+    assert(Source, "failed to load " .. tostring(LocalPath or Url) .. " (local file unavailable and HTTP sources failed)")
+    if string.find(string.lower(Url), "/esplib$") then
         local FirstReturn = string.find(Source, "\nreturn ESP")
         if FirstReturn then
             Source = string.sub(Source, 1, FirstReturn + #"\nreturn ESP" - 1)
@@ -47,11 +74,11 @@ local function LoadScript(Url, LocalPath)
 end
 
 local Library = LoadScript(
-    "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/uilib",
+    "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Bloxstrike/Uilib",
     "bloxstrike/Uilib.lua"
 )
 local ESP = LoadScript(
-    "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib",
+    "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/Bloxstrike/Esplib",
     "bloxstrike/Esplib.lua"
 )
 
@@ -104,34 +131,55 @@ local UpdateDrawingESP
 local DrawingESPEnabled = true
 
 local function GetBloxstrikeCharacter(Player)
+    if not Player then
+        return nil
+    end
+
+    -- Bloxstrike exposes the live character through Player.Character. Do not
+    -- search recursively: weapon/viewmodel models can be nested below the
+    -- workspace character container and are not valid ESP targets.
+    local Character = Player.Character
+    if Character and Character:IsA("Model") and Character:FindFirstChildOfClass("Humanoid") then
+        return Character
+    end
+
+    -- Fallback for respawn frames where Player.Character has not replicated
+    -- yet. Only accept an exact direct child with a Humanoid.
     local Characters = workspace:FindFirstChild("Characters")
     if not Characters then
         return nil
     end
 
-    return Characters:FindFirstChild(Player.Name)
-        or Characters:FindFirstChild(Player.Name, true)
+    local Fallback = Characters:FindFirstChild(Player.Name)
+    if Fallback and Fallback:IsA("Model") and Fallback:FindFirstChildOfClass("Humanoid") then
+        return Fallback
+    end
+
+    return nil
 end
 
 local function GetBloxstrikeTeam(Player)
-    local Characters = workspace:FindFirstChild("Characters")
-    if not Characters then
+    if not Player then
         return nil
     end
 
     local Character = GetBloxstrikeCharacter(Player)
-    local Terrorists = Characters:FindFirstChild("Terrorists")
-    local CounterTerrorists = Characters:FindFirstChild("Counter-Terrorists")
-
-    if Character and Terrorists and Character:IsDescendantOf(Terrorists) then
-        return "Terrorists"
+    local PlayerTeam = Player.Team
+    if PlayerTeam and (PlayerTeam.Name == "Terrorists" or PlayerTeam.Name == "Counter-Terrorists") then
+        return PlayerTeam.Name
     end
 
-    if Character and CounterTerrorists and Character:IsDescendantOf(CounterTerrorists) then
-        return "Counter-Terrorists"
+    local AttributeTeam = Character and Character:GetAttribute("Team")
+    if AttributeTeam == "Terrorists" or AttributeTeam == "Counter-Terrorists" then
+        return AttributeTeam
     end
 
-    return nil
+    local ParentName = Character and Character.Parent and Character.Parent.Name
+    if ParentName == "Terrorists" or ParentName == "Counter-Terrorists" then
+        return ParentName
+    end
+
+    return PlayerTeam and PlayerTeam.Name or nil
 end
 
 local function IsBloxstrikeSameTeam(LeftPlayer, RightPlayer)
@@ -325,14 +373,14 @@ do
     end
 
     local function GetDrawingBodyParts(Character)
-        local Head = Character:FindFirstChild("Head", true)
-        local Root = Character:FindFirstChild("HumanoidRootPart", true)
-            or Character:FindFirstChild("UpperTorso", true)
+        local Head = Character:FindFirstChild("Head")
+        local Root = Character:FindFirstChild("HumanoidRootPart")
+            or Character:FindFirstChild("UpperTorso")
             or Character.PrimaryPart
-        local Foot = Character:FindFirstChild("LeftFoot", true)
-            or Character:FindFirstChild("RightFoot", true)
-            or Character:FindFirstChild("Left Leg", true)
-            or Character:FindFirstChild("Right Leg", true)
+        local Foot = Character:FindFirstChild("LeftFoot")
+            or Character:FindFirstChild("RightFoot")
+            or Character:FindFirstChild("Left Leg")
+            or Character:FindFirstChild("Right Leg")
 
         if not Foot and Root then
             return Head, Root, Root.Position - Vector3.new(0, 3, 0)
@@ -356,8 +404,8 @@ do
                     local Character = GetBloxstrikeCharacter(Player)
                     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
                     local Root = Character and (
-                        Character:FindFirstChild("HumanoidRootPart", true)
-                        or Character:FindFirstChild("UpperTorso", true)
+                        Character:FindFirstChild("HumanoidRootPart")
+                        or Character:FindFirstChild("UpperTorso")
                         or Character.PrimaryPart
                     )
                     local SameTeam = IsBloxstrikeSameTeam(Players.LocalPlayer, Player)
@@ -801,9 +849,9 @@ do
                             end
                         end
                     else
-                        local TargetPart = Character:FindFirstChild(SilentAimPartName, true)
-                            or Character:FindFirstChild("Head", true)
-                            or Character:FindFirstChild("HumanoidRootPart", true)
+                        local TargetPart = Character:FindFirstChild(SilentAimPartName)
+                            or Character:FindFirstChild("Head")
+                            or Character:FindFirstChild("HumanoidRootPart")
                             or Character.PrimaryPart
                         if TargetPart and TargetPart:IsA("BasePart") then
                             table.insert(CandidateParts, TargetPart)
