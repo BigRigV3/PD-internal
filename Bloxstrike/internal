@@ -54,6 +54,14 @@ local ESP = LoadScript(
     "https://raw.githubusercontent.com/BigRigV3/PD-internal/refs/heads/main/esplib",
     "bloxstrike/Esplib.lua"
 )
+
+-- The Bloxstrike renderer below uses Drawing objects, matching the renderer
+-- used by the pasted combat script. Stop the ScreenGui renderer after loading
+-- so both systems do not draw duplicate ESP objects.
+pcall(function()
+    ESP:Unload()
+end)
+
 local Window = Library:Window({
     Name = "Bloxstrike",
     Rank = "developer"
@@ -91,6 +99,9 @@ local WatermarkFeatures = {
 }
 local WatermarkFPS = 0
 local WatermarkPing
+local ClearDrawingESP
+local UpdateDrawingESP
+local DrawingESPEnabled = true
 
 local function GetBloxstrikeCharacter(Player)
     local Characters = workspace:FindFirstChild("Characters")
@@ -134,6 +145,355 @@ local function IsBloxstrikeSameTeam(LeftPlayer, RightPlayer)
     return LeftPlayer.Team ~= nil and LeftPlayer.Team == RightPlayer.Team
 end
 
+do
+    local Players = game:GetService("Players")
+    local Camera
+    local DrawingPlayers = {}
+
+    local function NewDrawing(Class)
+        local Success, Object = pcall(function()
+            return Drawing.new(Class)
+        end)
+        return Success and Object or nil
+    end
+
+    local function SetDrawingVisible(Object, Visible)
+        if Object then
+            pcall(function()
+                Object.Visible = Visible == true
+            end)
+        end
+    end
+
+    local function RemoveDrawing(Object)
+        if not Object then
+            return
+        end
+
+        pcall(function()
+            Object.Visible = false
+        end)
+        pcall(function()
+            Object:Remove()
+        end)
+        pcall(function()
+            Object:Destroy()
+        end)
+    end
+
+    local function HideDrawingPlayer(Objects)
+        if not Objects then
+            return
+        end
+
+        for Name, Object in pairs(Objects) do
+            if Name == "Bones" then
+                for _, Bone in ipairs(Object) do
+                    SetDrawingVisible(Bone, false)
+                end
+            elseif Name ~= "Chams" then
+                SetDrawingVisible(Object, false)
+            end
+        end
+
+        if Objects.Chams then
+            pcall(function()
+                Objects.Chams.Enabled = false
+            end)
+        end
+    end
+
+    local function RemoveDrawingPlayer(Player)
+        local Objects = DrawingPlayers[Player]
+        if not Objects then
+            return
+        end
+
+        for Name, Object in pairs(Objects) do
+            if Name == "Bones" then
+                for _, Bone in ipairs(Object) do
+                    RemoveDrawing(Bone)
+                end
+            else
+                RemoveDrawing(Object)
+            end
+        end
+
+        DrawingPlayers[Player] = nil
+    end
+
+    local function CreateDrawingPlayer(Player)
+        if DrawingPlayers[Player] then
+            return DrawingPlayers[Player]
+        end
+
+        local Objects = {
+            BoxOutline = NewDrawing("Square"),
+            Box = NewDrawing("Square"),
+            Name = NewDrawing("Text"),
+            Distance = NewDrawing("Text"),
+            Weapon = NewDrawing("Text"),
+            HealthOutline = NewDrawing("Square"),
+            Health = NewDrawing("Square"),
+            Bones = {}
+        }
+
+        for _, Object in pairs(Objects) do
+            if Object and Object ~= Objects.Bones then
+                pcall(function()
+                    Object.Visible = false
+                end)
+            end
+        end
+
+        for _ = 1, 15 do
+            local Bone = NewDrawing("Line")
+            if Bone then
+                pcall(function()
+                    Bone.Thickness = 1
+                    Bone.Transparency = 1
+                    Bone.Visible = false
+                end)
+                table.insert(Objects.Bones, Bone)
+            end
+        end
+
+        if Library.Holder and Library.Holder.Instance then
+            local Success, Chams = pcall(function()
+                local Highlight = Instance.new("Highlight")
+                Highlight.Name = "BloxstrikeDrawingChams"
+                Highlight.Enabled = false
+                Highlight.Parent = Library.Holder.Instance
+                return Highlight
+            end)
+            if Success then
+                Objects.Chams = Chams
+            end
+        end
+
+        local BoxOutline = Objects.BoxOutline
+        local Box = Objects.Box
+        local Name = Objects.Name
+        local Distance = Objects.Distance
+        local Weapon = Objects.Weapon
+        local HealthOutline = Objects.HealthOutline
+        local Health = Objects.Health
+
+        pcall(function()
+            BoxOutline.Thickness = 2
+            BoxOutline.Filled = false
+            BoxOutline.Transparency = 1
+            BoxOutline.Color = Color3.fromRGB(255, 255, 255)
+        end)
+        pcall(function()
+            Box.Thickness = 1
+            Box.Filled = true
+            Box.Transparency = 0.25
+            Box.Color = Color3.fromRGB(0, 0, 0)
+        end)
+
+        for _, TextObject in ipairs({Name, Distance, Weapon}) do
+            pcall(function()
+                TextObject.Center = true
+                TextObject.Outline = true
+                TextObject.Font = 1
+                TextObject.Size = ESP.FontSize
+                TextObject.Color = Color3.fromRGB(255, 255, 255)
+            end)
+        end
+
+        pcall(function()
+            HealthOutline.Thickness = 1
+            HealthOutline.Filled = true
+            HealthOutline.Transparency = 1
+            HealthOutline.Color = Color3.fromRGB(0, 0, 0)
+            Health.Filled = true
+            Health.Transparency = 1
+        end)
+
+        DrawingPlayers[Player] = Objects
+        return Objects
+    end
+
+    local function GetDrawingWeaponName(Character)
+        for _, Descendant in ipairs(Character:GetDescendants()) do
+            if Descendant:IsA("Tool") then
+                return Descendant.Name
+            end
+        end
+        return "none"
+    end
+
+    local function GetDrawingBodyParts(Character)
+        local Head = Character:FindFirstChild("Head", true)
+        local Root = Character:FindFirstChild("HumanoidRootPart", true)
+            or Character:FindFirstChild("UpperTorso", true)
+            or Character.PrimaryPart
+        local Foot = Character:FindFirstChild("LeftFoot", true)
+            or Character:FindFirstChild("RightFoot", true)
+            or Character:FindFirstChild("Left Leg", true)
+            or Character:FindFirstChild("Right Leg", true)
+
+        if not Foot and Root then
+            return Head, Root, Root.Position - Vector3.new(0, 3, 0)
+        end
+
+        return Head, Root, Foot and Foot.Position or (Root and Root.Position)
+    end
+
+    local function RenderDrawingESP()
+        Camera = workspace.CurrentCamera
+        local ActivePlayers = {}
+
+        if DrawingESPEnabled and Camera then
+            for _, Player in ipairs(Players:GetPlayers()) do
+                local Objects = CreateDrawingPlayer(Player)
+                ActivePlayers[Player] = true
+
+                if Player == Players.LocalPlayer and not ESP.SelfCheck then
+                    HideDrawingPlayer(Objects)
+                else
+                    local Character = GetBloxstrikeCharacter(Player)
+                    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+                    local Root = Character and (
+                        Character:FindFirstChild("HumanoidRootPart", true)
+                        or Character:FindFirstChild("UpperTorso", true)
+                        or Character.PrimaryPart
+                    )
+                    local SameTeam = IsBloxstrikeSameTeam(Players.LocalPlayer, Player)
+                    local DistanceInStuds = Root and (Camera.CFrame.Position - Root.Position).Magnitude
+                    local MaxDistanceInStuds = (ESP.MaxDistance or 200) * 3.5714285714
+
+                    local Allowed = Character
+                        and Humanoid
+                        and Root
+                        and Humanoid.Health > 0
+                        and (Player == Players.LocalPlayer or not (ESP.TeamCheck and SameTeam))
+                        and DistanceInStuds <= MaxDistanceInStuds
+
+                    if not Allowed then
+                        HideDrawingPlayer(Objects)
+                    else
+                        local Head, BodyRoot, FootPosition = GetDrawingBodyParts(Character)
+                        local RootPosition, RootOnScreen = Camera:WorldToViewportPoint(BodyRoot.Position)
+                        local HeadPosition = Head
+                            and Camera:WorldToViewportPoint(Head.Position)
+                            or Camera:WorldToViewportPoint(BodyRoot.Position + Vector3.new(0, 2, 0))
+                        local LegPosition = Camera:WorldToViewportPoint(FootPosition)
+
+                        if not RootOnScreen or RootPosition.Z <= 0 then
+                            HideDrawingPlayer(Objects)
+                        else
+                            local Height = math.max(math.abs(HeadPosition.Y - LegPosition.Y), 1)
+                            local Width = math.max(Height / 1.6, 1)
+                            local BoxX = RootPosition.X - Width / 2
+                            local BoxY = HeadPosition.Y
+                            local BoxSize = Vector2.new(Width, Height)
+                            local BoxPosition = Vector2.new(BoxX, BoxY)
+                            local OutlineColor = ESP.Drawing.Boxes.Full.RGB
+                            local FillColor = ESP.Drawing.Boxes.Filled.RGB
+                            local NameColor = ESP.Drawing.Names.RGB
+                            local DistanceColor = ESP.Drawing.Distances.RGB
+                            local HealthColor = ESP.Drawing.Healthbar.HealthTextRGB
+                            local FontSize = ESP.FontSize or 11
+
+                            pcall(function()
+                                Objects.BoxOutline.Color = OutlineColor
+                                Objects.BoxOutline.Size = BoxSize
+                                Objects.BoxOutline.Position = BoxPosition
+                                Objects.BoxOutline.Thickness = 2
+                                Objects.BoxOutline.Visible = ESP.Drawing.Boxes.Full.Enabled
+                            end)
+                            pcall(function()
+                                Objects.Box.Color = FillColor
+                                Objects.Box.Size = BoxSize
+                                Objects.Box.Position = BoxPosition
+                                Objects.Box.Transparency = math.clamp(1 - (ESP.Drawing.Boxes.Filled.Transparency or 0.75), 0, 1)
+                                Objects.Box.Visible = ESP.Drawing.Boxes.Filled.Enabled
+                            end)
+
+                            pcall(function()
+                                Objects.Name.Size = FontSize
+                                Objects.Name.Color = NameColor
+                                Objects.Name.Text = Player.Name
+                                Objects.Name.Position = Vector2.new(RootPosition.X, BoxY - 15)
+                                Objects.Name.Visible = ESP.Drawing.Names.Enabled
+                            end)
+
+                            pcall(function()
+                                Objects.Distance.Size = FontSize
+                                Objects.Distance.Color = DistanceColor
+                                Objects.Distance.Text = string.format("%dm", math.floor(DistanceInStuds / 3.5714285714))
+                                Objects.Distance.Position = Vector2.new(RootPosition.X, BoxY + Height + 2)
+                                Objects.Distance.Visible = ESP.Drawing.Distances.Enabled
+                            end)
+
+                            pcall(function()
+                                Objects.Weapon.Size = FontSize
+                                Objects.Weapon.Color = ESP.Drawing.Weapons.WeaponTextRGB
+                                Objects.Weapon.Text = GetDrawingWeaponName(Character)
+                                Objects.Weapon.Position = Vector2.new(RootPosition.X, BoxY + Height + FontSize + 2)
+                                Objects.Weapon.Visible = ESP.Drawing.Weapons.Enabled and not ESP.Drawing.Weapons.Icons
+                            end)
+
+                            local HealthPercent = math.clamp(Humanoid.Health / math.max(Humanoid.MaxHealth, 1), 0, 1)
+                            local HealthHeight = Height * HealthPercent
+                            local HealthX = BoxX - 5
+                            local LowColor = ESP.Drawing.Healthbar.GradientRGB1
+                            local MidColor = ESP.Drawing.Healthbar.GradientRGB2
+                            local HighColor = ESP.Drawing.Healthbar.GradientRGB3
+                            if HealthPercent < 0.5 then
+                                HealthColor = LowColor:Lerp(MidColor, HealthPercent * 2)
+                            else
+                                HealthColor = MidColor:Lerp(HighColor, (HealthPercent - 0.5) * 2)
+                            end
+
+                            pcall(function()
+                                Objects.HealthOutline.Position = Vector2.new(HealthX - 1, BoxY - 1)
+                                Objects.HealthOutline.Size = Vector2.new(4, Height + 2)
+                                Objects.HealthOutline.Visible = ESP.Drawing.Healthbar.Enabled
+                                Objects.Health.Position = Vector2.new(HealthX, BoxY + Height - HealthHeight)
+                                Objects.Health.Size = Vector2.new(2, HealthHeight)
+                                Objects.Health.Color = HealthColor
+                                Objects.Health.Visible = ESP.Drawing.Healthbar.Enabled
+                            end)
+
+                            if Objects.Chams then
+                                pcall(function()
+                                    Objects.Chams.Adornee = Character
+                                    Objects.Chams.FillColor = ESP.Drawing.Chams.FillRGB
+                                    Objects.Chams.OutlineColor = ESP.Drawing.Chams.OutlineRGB
+                                    Objects.Chams.FillTransparency = math.clamp((ESP.Drawing.Chams.Fill_Transparency or 100) * 0.01, 0, 1)
+                                    Objects.Chams.OutlineTransparency = math.clamp((ESP.Drawing.Chams.Outline_Transparency or 100) * 0.01, 0, 1)
+                                    Objects.Chams.DepthMode = ESP.Drawing.Chams.VisibleCheck
+                                        and Enum.HighlightDepthMode.Occluded
+                                        or Enum.HighlightDepthMode.AlwaysOnTop
+                                    Objects.Chams.Enabled = ESP.Drawing.Chams.Enabled == true
+                                end)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        for Player in pairs(DrawingPlayers) do
+            if not ActivePlayers[Player] then
+                RemoveDrawingPlayer(Player)
+            end
+        end
+    end
+
+    ClearDrawingESP = function()
+        for Player in pairs(DrawingPlayers) do
+            RemoveDrawingPlayer(Player)
+        end
+    end
+
+    UpdateDrawingESP = RenderDrawingESP
+    Library:Connect(game:GetService("RunService").RenderStepped, RenderDrawingESP)
+end
+
 local SelfChamsEnabled = false
 local ArmChamsEnabled = false
 local SelfChamsColor = Color3.fromRGB(126, 192, 255)
@@ -141,6 +501,10 @@ local ArmChamsColor = Color3.fromRGB(126, 192, 255)
 local ClearLocalChams
 
 local function RemoveMainESP()
+    if ClearDrawingESP then
+        pcall(ClearDrawingESP)
+    end
+
     if ESP and type(ESP.Unload) == "function" then
         pcall(function()
             ESP:Unload()
@@ -647,9 +1011,15 @@ do
     Main:Toggle({
         Name = "master esp",
         Flag = "esp_enabled",
-        Default = ESP.Enabled,
+        Default = DrawingESPEnabled,
         Callback = function(Value)
-            ESP.Enabled = Value
+            DrawingESPEnabled = Value == true
+            ESP.Enabled = false
+            if not DrawingESPEnabled then
+                if ClearDrawingESP then
+                    ClearDrawingESP()
+                end
+            end
         end
     })
 
