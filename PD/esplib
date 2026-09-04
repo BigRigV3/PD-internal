@@ -12,7 +12,6 @@ local ESP = {
     Enabled = true,
     TeamCheck = false,
     MaxDistance = 200,
-    UpdateRate = 15,
     FontSize = 11,
     FadeOut = {
         OnDistance = true,
@@ -813,12 +812,9 @@ do -- Initalize
         --
         local Updater = function()
             local Connection;
-            local UpdateAccumulator = 0
             local BoundsAccumulator = 0
             local CachedCharacter
             local CachedBodyParts
-            local UpdateInterval = 1 / math.max(ESP.UpdateRate or 30, 1)
-            local LastUpdateRate = ESP.UpdateRate or 30
             local IsHidden = false
             local CachedTool = "none"
             local CachedWeaponImage = nil
@@ -967,17 +963,6 @@ do -- Initalize
             end
             --
             Connection = Euphoria.RunService.RenderStepped:Connect(function(DeltaTime)
-                UpdateAccumulator = UpdateAccumulator + DeltaTime
-                local CurrentUpdateRate = math.max(ESP.UpdateRate or 30, 1)
-                if CurrentUpdateRate ~= LastUpdateRate then
-                    LastUpdateRate = CurrentUpdateRate
-                    UpdateInterval = 1 / CurrentUpdateRate
-                end
-
-                if UpdateAccumulator < UpdateInterval then
-                    return
-                end
-                UpdateAccumulator = UpdateAccumulator % UpdateInterval
                 local CurrentTime = tick()
 
                 if not ESP.Enabled then
@@ -1103,10 +1088,7 @@ do -- Initalize
                                 local OutlineTransparency = math.clamp((Chams.Outline_Transparency or 100) * 0.01, 0, 1)
 
                                 if Chams.Thermal then
-                                    -- Thermal motion does not need to update at the
-                                    -- full ESP rate; 10 Hz keeps it smooth while
-                                    -- avoiding repeated Highlight property writes.
-                                    local ThermalTime = math.floor(CurrentTime * 10) / 10
+                                    local ThermalTime = CurrentTime
                                     local breathe_effect = 0.35 + ((math.sin(ThermalTime * 2) + 1) * 0.325)
                                     FillTransparency = math.clamp(FillTransparency * breathe_effect, 0, 1)
                                     OutlineTransparency = math.clamp(OutlineTransparency * breathe_effect, 0, 1)
@@ -2398,8 +2380,6 @@ do -- Initalize
         --
         local Updater = function()
             local Connection;
-            local UpdateAccumulator = 0
-            local UpdateInterval = 1 / 30
             local BoundsAccumulator = 0
             local CachedCharacter
             local CachedBoundsWidth
@@ -2513,11 +2493,6 @@ do -- Initalize
             end
             --
             Connection = Euphoria.RunService.RenderStepped:Connect(function(DeltaTime)
-                UpdateAccumulator = UpdateAccumulator + DeltaTime
-                if UpdateAccumulator < UpdateInterval then
-                    return
-                end
-                UpdateAccumulator = UpdateAccumulator % UpdateInterval
                 local CurrentTime = tick()
 
                 if not ESP.Enabled then
@@ -2565,7 +2540,7 @@ do -- Initalize
                                 CachedBoundsOffsetY = nil
                                 BoundsAccumulator = 0
                             else
-                                BoundsAccumulator = BoundsAccumulator + UpdateInterval
+                                BoundsAccumulator = BoundsAccumulator + DeltaTime
                             end
 
                             if not CachedBoundsWidth or BoundsAccumulator >= 0.1 then
@@ -2647,7 +2622,7 @@ do -- Initalize
                                 local OutlineTransparency = math.clamp((Chams.Outline_Transparency or 100) * 0.01, 0, 1)
 
                                 if Chams.Thermal then
-                                    local ThermalTime = math.floor(CurrentTime * 10) / 10
+                                    local ThermalTime = CurrentTime
                                     local breathe_effect = 0.35 + ((math.sin(ThermalTime * 2) + 1) * 0.325)
                                     FillTransparency = math.clamp(FillTransparency * breathe_effect, 0, 1)
                                     OutlineTransparency = math.clamp(OutlineTransparency * breathe_effect, 0, 1)
