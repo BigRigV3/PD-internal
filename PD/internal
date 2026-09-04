@@ -91,6 +91,22 @@ local ThirdPersonMaxZoomDistance
 local ThirdPersonMouseLock
 local SetThirdPersonEnabled
 local RestoreWeaponModsHook
+local NoFallEnabled = false
+local AntiDrownEnabled = false
+local RemoveWaterEnabled = false
+local SpeedEnabled = false
+local SpeedAmount = 1
+local JumpEnabled = false
+local JumpAmount = 0
+local GravityEnabled = false
+local GravityAmount = 0
+local HideClothesEnabled = false
+local ZoomEnabled = false
+local ZoomFOV = 50
+local OriginalMovementProperties
+local OriginalGravity
+local OriginalFOV
+local RestorePlayerMods
 local FOVCircle
 local FOVCircleVisible = true
 local Environment = getgenv()
@@ -482,6 +498,9 @@ local function UnloadAll()
     end
     if RestoreInstantHitHook then
         pcall(RestoreInstantHitHook)
+    end
+    if RestorePlayerMods then
+        pcall(RestorePlayerMods)
     end
     pcall(function()
         Library:Exit()
@@ -2250,31 +2269,13 @@ end
 ExploitSection:Toggle({
     Name = "third person",
     Flag = "tp_on",
-    Default = false,
+    Default = true,
     Callback = function(Value)
         SetThirdPersonEnabled(Value)
     end
 })
 
-local ThirdPersonKeybindReady = false
-ExploitSection:Label({Name = "third person key"}):Keybind({
-    Flag = "tp_key",
-    Mode = "Toggle",
-    Default = Enum.KeyCode.V,
-    Callback = function()
-        if not ThirdPersonKeybindReady then
-            return
-        end
-
-        local Value = not ThirdPersonEnabled
-        if Library.SetFlags["tp_on"] then
-            Library.SetFlags["tp_on"](Value)
-        else
-            SetThirdPersonEnabled(Value)
-        end
-    end
-})
-ThirdPersonKeybindReady = true
+SetThirdPersonEnabled(true)
 
 ExploitSection:Slider({
     Name = "third person distance",
@@ -2288,6 +2289,213 @@ ExploitSection:Slider({
         ThirdPersonDistance = Value
     end
 })
+
+ExploitSection:Toggle({
+    Name = "no fall damage",
+    Flag = "no_fall",
+    Default = false,
+    Callback = function(Value) NoFallEnabled = Value == true end
+})
+
+ExploitSection:Toggle({
+    Name = "anti drown",
+    Flag = "anti_drown",
+    Default = false,
+    Callback = function(Value) AntiDrownEnabled = Value == true end
+})
+
+ExploitSection:Toggle({
+    Name = "remove water around",
+    Flag = "remove_water",
+    Default = false,
+    Callback = function(Value) RemoveWaterEnabled = Value == true end
+})
+
+ExploitSection:Toggle({
+    Name = "speed",
+    Flag = "speed",
+    Default = false,
+    Callback = function(Value) SpeedEnabled = Value == true end
+})
+
+ExploitSection:Slider({
+    Name = "speed amount",
+    Flag = "speed_amount",
+    Min = 0,
+    Max = 50,
+    Default = 1,
+    Decimals = 1,
+    Callback = function(Value) SpeedAmount = Value end
+})
+
+ExploitSection:Toggle({
+    Name = "jump",
+    Flag = "jump",
+    Default = false,
+    Callback = function(Value) JumpEnabled = Value == true end
+})
+
+ExploitSection:Slider({
+    Name = "jump amount",
+    Flag = "jump_amount",
+    Min = 0,
+    Max = 200,
+    Default = 0,
+    Decimals = 1,
+    Callback = function(Value) JumpAmount = Value end
+})
+
+ExploitSection:Toggle({
+    Name = "gravity",
+    Flag = "gravity",
+    Default = false,
+    Callback = function(Value) GravityEnabled = Value == true end
+})
+
+ExploitSection:Slider({
+    Name = "gravity amount",
+    Flag = "gravity_amount",
+    Min = -196.2,
+    Max = 392.4,
+    Default = 0,
+    Decimals = 0.1,
+    Callback = function(Value) GravityAmount = Value end
+})
+
+ExploitSection:Toggle({
+    Name = "zoom",
+    Flag = "zoom",
+    Default = false,
+    Callback = function(Value) ZoomEnabled = Value == true end
+})
+
+ExploitSection:Slider({
+    Name = "zoom FOV",
+    Flag = "zoom_fov",
+    Min = 1,
+    Max = 120,
+    Default = 50,
+    Decimals = 1,
+    Callback = function(Value) ZoomFOV = Value end
+})
+
+ExploitSection:Toggle({
+    Name = "hide clothes",
+    Flag = "hide_clothes",
+    Default = false,
+    Callback = function(Value) HideClothesEnabled = Value == true end
+})
+
+ExploitSection:Slider({
+    Name = "FPS cap",
+    Flag = "fps_cap",
+    Min = 1,
+    Max = 1000,
+    Default = 120,
+    Decimals = 0,
+    Callback = function(Value)
+        if type(setfpscap) == "function" then pcall(setfpscap, Value) end
+    end
+})
+
+OriginalGravity = workspace.Gravity
+
+RestorePlayerMods = function()
+    local Character = player.Character
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    if Humanoid and OriginalMovementProperties then
+        pcall(function()
+            Humanoid.WalkSpeed = OriginalMovementProperties.WalkSpeed
+            Humanoid.JumpPower = OriginalMovementProperties.JumpPower
+            Humanoid.JumpHeight = OriginalMovementProperties.JumpHeight
+        end)
+    end
+    if OriginalGravity then workspace.Gravity = OriginalGravity end
+    local Settings = ReplicatedStorage:FindFirstChild("Players")
+        and ReplicatedStorage.Players:FindFirstChild(player.Name)
+        and ReplicatedStorage.Players[player.Name]:FindFirstChild("Settings")
+        and ReplicatedStorage.Players[player.Name].Settings:FindFirstChild("GameplaySettings")
+    if Settings and OriginalFOV ~= nil then
+        pcall(function() Settings:SetAttribute("DefaultFOV", OriginalFOV) end)
+    end
+end
+
+Library:Connect(MiscRunService.Heartbeat, function()
+    local Character = player.Character
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    if not Humanoid then return end
+
+    if not OriginalMovementProperties then
+        OriginalMovementProperties = {
+            WalkSpeed = Humanoid.WalkSpeed,
+            JumpPower = Humanoid.JumpPower,
+            JumpHeight = Humanoid.JumpHeight
+        }
+    end
+
+    Humanoid.WalkSpeed = SpeedEnabled
+        and OriginalMovementProperties.WalkSpeed + SpeedAmount
+        or OriginalMovementProperties.WalkSpeed
+
+    if JumpEnabled then
+        if Humanoid.UseJumpPower then
+            Humanoid.JumpPower = OriginalMovementProperties.JumpPower + JumpAmount
+        else
+            Humanoid.JumpHeight = OriginalMovementProperties.JumpHeight + JumpAmount
+        end
+    else
+        Humanoid.JumpPower = OriginalMovementProperties.JumpPower
+        Humanoid.JumpHeight = OriginalMovementProperties.JumpHeight
+    end
+
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, not AntiDrownEnabled)
+
+    if NoFallEnabled then
+        local State = Humanoid:GetState()
+        local Root = Humanoid.RootPart
+        if (State == Enum.HumanoidStateType.FallingDown or State == Enum.HumanoidStateType.Freefall)
+            and Root and Root.AssemblyLinearVelocity.Y < -15
+        then
+            Humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+        end
+    end
+
+    workspace.Gravity = GravityEnabled and OriginalGravity + GravityAmount or OriginalGravity
+
+    if RemoveWaterEnabled and Humanoid.RootPart and workspace.Terrain then
+        pcall(function()
+            workspace.Terrain:ReplaceMaterialInTransform(
+                Humanoid.RootPart.CFrame,
+                Vector3.new(20, 20, 20),
+                Enum.Material.Water,
+                Enum.Material.Air
+            )
+        end)
+    end
+
+    local Settings = ReplicatedStorage:FindFirstChild("Players")
+        and ReplicatedStorage.Players:FindFirstChild(player.Name)
+        and ReplicatedStorage.Players[player.Name]:FindFirstChild("Settings")
+        and ReplicatedStorage.Players[player.Name].Settings:FindFirstChild("GameplaySettings")
+    if Settings then
+        if ZoomEnabled then
+            OriginalFOV = OriginalFOV == nil and Settings:GetAttribute("DefaultFOV") or OriginalFOV
+            Settings:SetAttribute("DefaultFOV", ZoomFOV)
+        elseif OriginalFOV ~= nil then
+            Settings:SetAttribute("DefaultFOV", OriginalFOV)
+        end
+    end
+
+    if HideClothesEnabled then
+        for _, Item in ipairs(Character:GetChildren()) do
+            if Item:IsA("Accessory") then
+                for _, Part in ipairs(Item:GetDescendants()) do
+                    if Part:IsA("BasePart") then Part.LocalTransparencyModifier = 1 end
+                end
+            end
+        end
+    end
+end)
 
 Library:Connect(MiscRunService.RenderStepped, function()
     if not ThirdPersonEnabled then
