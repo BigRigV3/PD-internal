@@ -2921,7 +2921,7 @@ ExploitSection:Button({
 
         local targets = {
             workspace:FindFirstChild("Jake"),
-            workspace:FindFirstChild("VaultManager"),
+           
             workspace:FindFirstChild("Boss"),
             workspace:FindFirstChild("Mihkel"),
             workspace:FindFirstChild("Nurse"),
