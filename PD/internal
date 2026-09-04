@@ -53,7 +53,6 @@ local AimbotFOVEnabled = true
 local AimbotFOVRadius = 120
 local SilentAimEnabled = false
 local SilentAimPartName = "Head"
-local SilentAimFOVRadius = 120
 local SilentAimTeamCheck = true
 local SilentAimTargetPart
 local RestoreSilentAimHook
@@ -94,17 +93,12 @@ local RestoreWeaponModsHook
 local NoFallEnabled = false
 local AntiDrownEnabled = false
 local RemoveWaterEnabled = false
-local SpeedEnabled = false
-local SpeedAmount = 1
 local JumpEnabled = false
 local JumpAmount = 0
-local GravityEnabled = false
-local GravityAmount = 0
 local HideClothesEnabled = false
 local ZoomEnabled = false
 local ZoomFOV = 50
 local OriginalMovementProperties
-local OriginalGravity
 local OriginalFOV
 local RestorePlayerMods
 local FOVCircle
@@ -561,19 +555,6 @@ do
         Suffix = "m",
         Callback = function(Value)
             ESP.MaxDistance = Value
-        end
-    })
-
-    Main:Slider({
-        Name = "esp update rate",
-        Flag = "esp_update_rate",
-        Min = 10,
-        Max = 30,
-        Default = ESP.UpdateRate,
-        Decimals = 1,
-        Suffix = "hz",
-        Callback = function(Value)
-            ESP.UpdateRate = Value
         end
     })
 
@@ -1171,9 +1152,6 @@ do
         if type(Flags.esp_max_distance) == "number" then
             ESP.MaxDistance = Flags.esp_max_distance
         end
-        if type(Flags.esp_update_rate) == "number" then
-            ESP.UpdateRate = Flags.esp_update_rate
-        end
         if type(Flags.esp_font_size) == "number" then
             ESP.FontSize = Flags.esp_font_size
         end
@@ -1709,19 +1687,6 @@ do
         end
     })
 
-    SilentAimSection:Slider({
-        Name = "fov",
-        Flag = "silent_aim_fov",
-        Min = 25,
-        Max = 500,
-        Default = 120,
-        Decimals = 1,
-        Suffix = "px",
-        Callback = function(Value)
-            SilentAimFOVRadius = Value
-        end
-    })
-
     local function ResolveSilentAimPart(Character)
         if not Character then
             return nil
@@ -1744,7 +1709,7 @@ do
 
         local MousePosition = SilentAimUserInputService:GetMouseLocation()
         local BestPart
-        local BestDistance = SilentAimFOVRadius
+        local BestDistance = AimbotFOVRadius
 
         for _, TargetPlayer in ipairs(SilentAimPlayers:GetPlayers()) do
             if TargetPlayer ~= SilentAimLocalPlayer then
@@ -2269,13 +2234,11 @@ end
 ExploitSection:Toggle({
     Name = "third person",
     Flag = "tp_on",
-    Default = true,
+    Default = false,
     Callback = function(Value)
         SetThirdPersonEnabled(Value)
     end
 })
-
-SetThirdPersonEnabled(true)
 
 ExploitSection:Slider({
     Name = "third person distance",
@@ -2312,23 +2275,6 @@ ExploitSection:Toggle({
 })
 
 ExploitSection:Toggle({
-    Name = "speed",
-    Flag = "speed",
-    Default = false,
-    Callback = function(Value) SpeedEnabled = Value == true end
-})
-
-ExploitSection:Slider({
-    Name = "speed amount",
-    Flag = "speed_amount",
-    Min = 0,
-    Max = 50,
-    Default = 1,
-    Decimals = 1,
-    Callback = function(Value) SpeedAmount = Value end
-})
-
-ExploitSection:Toggle({
     Name = "jump",
     Flag = "jump",
     Default = false,
@@ -2343,23 +2289,6 @@ ExploitSection:Slider({
     Default = 0,
     Decimals = 1,
     Callback = function(Value) JumpAmount = Value end
-})
-
-ExploitSection:Toggle({
-    Name = "gravity",
-    Flag = "gravity",
-    Default = false,
-    Callback = function(Value) GravityEnabled = Value == true end
-})
-
-ExploitSection:Slider({
-    Name = "gravity amount",
-    Flag = "gravity_amount",
-    Min = -196.2,
-    Max = 392.4,
-    Default = 0,
-    Decimals = 0.1,
-    Callback = function(Value) GravityAmount = Value end
 })
 
 ExploitSection:Toggle({
@@ -2378,6 +2307,26 @@ ExploitSection:Slider({
     Decimals = 1,
     Callback = function(Value) ZoomFOV = Value end
 })
+
+local ZoomKeybindReady = false
+ExploitSection:Label({Name = "zoom key"}):Keybind({
+    Flag = "zoom_key",
+    Mode = "Toggle",
+    Default = Enum.KeyCode.Z,
+    Callback = function()
+        if not ZoomKeybindReady then
+            return
+        end
+
+        local Value = not ZoomEnabled
+        if Library.SetFlags["zoom"] then
+            Library.SetFlags["zoom"](Value)
+        else
+            ZoomEnabled = Value
+        end
+    end
+})
+ZoomKeybindReady = true
 
 ExploitSection:Toggle({
     Name = "hide clothes",
@@ -2398,8 +2347,6 @@ ExploitSection:Slider({
     end
 })
 
-OriginalGravity = workspace.Gravity
-
 RestorePlayerMods = function()
     local Character = player.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
@@ -2410,7 +2357,6 @@ RestorePlayerMods = function()
             Humanoid.JumpHeight = OriginalMovementProperties.JumpHeight
         end)
     end
-    if OriginalGravity then workspace.Gravity = OriginalGravity end
     local Settings = ReplicatedStorage:FindFirstChild("Players")
         and ReplicatedStorage.Players:FindFirstChild(player.Name)
         and ReplicatedStorage.Players[player.Name]:FindFirstChild("Settings")
@@ -2432,10 +2378,6 @@ Library:Connect(MiscRunService.Heartbeat, function()
             JumpHeight = Humanoid.JumpHeight
         }
     end
-
-    Humanoid.WalkSpeed = SpeedEnabled
-        and OriginalMovementProperties.WalkSpeed + SpeedAmount
-        or OriginalMovementProperties.WalkSpeed
 
     if JumpEnabled then
         if Humanoid.UseJumpPower then
@@ -2459,8 +2401,6 @@ Library:Connect(MiscRunService.Heartbeat, function()
             Humanoid:ChangeState(Enum.HumanoidStateType.Landed)
         end
     end
-
-    workspace.Gravity = GravityEnabled and OriginalGravity + GravityAmount or OriginalGravity
 
     if RemoveWaterEnabled and Humanoid.RootPart and workspace.Terrain then
         pcall(function()
