@@ -11,7 +11,7 @@ local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game
 local ESP = {
     Enabled = true,
     TeamCheck = false,
-    MaxDistance = 200,
+    MaxDistance = 500,
     FontSize = 11,
     FadeOut = {
         OnDistance = true,
@@ -44,6 +44,7 @@ local ESP = {
         },
         Flags = {
             Enabled = true,
+            Visibility = true,
         },
         Distances = {
             Enabled = true, 
@@ -858,6 +859,8 @@ do -- Initalize
             local LastWeaponText
             local LastFlagsText
             local LastFlagsColor
+            local LastVisibilityText
+            local LastVisibilityColor
             local function HideESP()
                 if IsHidden and plr then
                     return
@@ -925,6 +928,8 @@ do -- Initalize
                 LastWeaponText = nil
                 LastFlagsText = nil
                 LastFlagsColor = nil
+                LastVisibilityText = nil
+                LastVisibilityColor = nil
                 if not plr then
                     ScreenGui:Destroy();
                     Connection:Disconnect();
@@ -1080,6 +1085,14 @@ do -- Initalize
 
                         if IsValidTarget then
                             IsHidden = false
+                            local TargetVisible = true
+                            pcall(function()
+                                local Ignore = {Character}
+                                if lplayer.Character then
+                                    table.insert(Ignore, lplayer.Character)
+                                end
+                                TargetVisible = #Cam:GetPartsObscuringTarget({HRP.Position}, Ignore) == 0
+                            end)
 
                             do -- Chams
                                 local Chams = ESP.Drawing.Chams
@@ -1427,6 +1440,10 @@ do -- Initalize
                                 local FlagsEnabled = ESP.Drawing.Flags.Enabled == true
                                 local FlagText = IsFriend and "FRIEND" or "ENEMY"
                                 local FlagColor = IsFriend and ESP.Options.FriendcheckRGB or Color3.fromRGB(255, 80, 80)
+                                local VisibilityText = TargetVisible and "VISIBLE" or "HIDDEN"
+                                local VisibilityColor = TargetVisible
+                                    and Color3.fromRGB(55, 200, 55)
+                                    or Color3.fromRGB(255, 55, 55)
 
                                 Flag1.Position = UDim2.new(0, Pos.X + w / 2 + 20, 0, Pos.Y - h / 2 + 3)
                                 Flag2.Position = UDim2.new(0, Pos.X + w / 2 + 20, 0, Pos.Y - h / 2 + 17)
@@ -1441,8 +1458,18 @@ do -- Initalize
                                     Flag1.TextColor3 = FlagColor
                                 end
 
+                                if LastVisibilityText ~= VisibilityText then
+                                    LastVisibilityText = VisibilityText
+                                    Flag2.Text = VisibilityText
+                                end
+
+                                if LastVisibilityColor ~= VisibilityColor then
+                                    LastVisibilityColor = VisibilityColor
+                                    Flag2.TextColor3 = VisibilityColor
+                                end
+
                                 Flag1.Visible = FlagsEnabled
-                                Flag2.Visible = false
+                                Flag2.Visible = FlagsEnabled and ESP.Drawing.Flags.Visibility == true
                             end
                             
                             do -- Distance
