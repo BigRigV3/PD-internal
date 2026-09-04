@@ -57,6 +57,9 @@ local SilentAimFOVRadius = 120
 local SilentAimTeamCheck = true
 local SilentAimTargetPart
 local RestoreSilentAimHook
+local InstantHitEnabled = false
+local InstantHitMethod = "raycast"
+local RestoreInstantHitHook
 local AntiAimEnabled = false
 local AntiAimUnderground = false
 local AntiAimMode = "Reverse"
@@ -476,6 +479,9 @@ local function UnloadAll()
     end
     if RestoreSilentAimHook then
         pcall(RestoreSilentAimHook)
+    end
+    if RestoreInstantHitHook then
+        pcall(RestoreInstantHitHook)
     end
     pcall(function()
         Library:Exit()
@@ -1281,6 +1287,27 @@ do
     })
 
     WeaponModsSection:Toggle({
+        Name = "instant hit",
+        Flag = "instant_hit",
+        Default = false,
+        Callback = function(Value)
+            InstantHitEnabled = Value == true
+        end
+    })
+
+    WeaponModsSection:Dropdown({
+        Name = "instant hit method",
+        Flag = "instant_hit_method",
+        Items = {"raycast", "invoke"},
+        Default = "raycast",
+        Callback = function(Value)
+            if type(Value) == "string" then
+                InstantHitMethod = Value
+            end
+        end
+    })
+
+    WeaponModsSection:Toggle({
         Name = "all firemodes",
         Flag = "allfiremode",
         Default = false
@@ -1732,6 +1759,88 @@ do
     Library:Connect(SilentAimRunService.RenderStepped, function()
         SilentAimTargetPart = GetSilentAimTarget()
     end)
+
+    local InstantHitHookInstalled = false
+    local InstantHitUnpack = table.unpack or unpack
+
+    local function InstallInstantHitHook()
+        if InstantHitHookInstalled
+            or type(hookmetamethod) ~= "function"
+            or type(getnamecallmethod) ~= "function"
+        then
+            return InstantHitHookInstalled
+        end
+
+        local OldNamecall
+        local MakeClosure = type(newcclosure) == "function" and newcclosure or function(Callback)
+            return Callback
+        end
+
+        local Success = pcall(function()
+            OldNamecall = hookmetamethod(game, "__namecall", MakeClosure(function(self, ...)
+                local Arguments = {...}
+                local Method = tostring(getnamecallmethod())
+                local TargetPart = SilentAimTargetPart
+
+                if InstantHitEnabled
+                    and TargetPart
+                    and TargetPart.Parent
+                    and Method == "Raycast"
+                then
+                    local CallerInfo = type(getinfo) == "function" and getinfo(3)
+                    local CallerSource = CallerInfo and CallerInfo.short_src
+                    if type(CallerSource) == "string" and string.find(CallerSource, "Bullet", 1, true) then
+                        local Origin = Arguments[1]
+                        if typeof(Origin) == "Vector3" then
+                            local Direction = TargetPart.Position - Origin
+                            if Direction.Magnitude > 0 then
+                                Arguments[2] = Direction.Unit * Direction.Magnitude * 10
+                            end
+                        end
+                    end
+                elseif InstantHitEnabled
+                    and InstantHitMethod == "invoke"
+                    and (Method == "InvokeServer" or Method == "invokeServer")
+                    and self.Name == "FireProjectile"
+                then
+                    local Origin = Arguments[1]
+                    if TargetPart
+                        and TargetPart.Parent
+                        and typeof(Origin) == "Vector3"
+                    then
+                        local Distance = (TargetPart.Position - Origin).Magnitude
+                        task.spawn(function()
+                            pcall(function()
+                                SilentAimReplicatedStorage.Remotes.ProjectileInflict:FireServer(
+                                    TargetPart,
+                                    CFrame.new(0, 0.2, -0.2),
+                                    Arguments[2],
+                                    (tonumber(Arguments[3]) or 0) + Distance * 0.0065
+                                )
+                            end)
+                        end)
+                    end
+                elseif InstantHitEnabled
+                    and InstantHitMethod == "raycast"
+                    and (Method == "FireServer" or Method == "fireServer")
+                    and self.Name == "ProjectileInflict"
+                then
+                    Arguments[4] = 0 / 0
+                end
+
+                return OldNamecall(self, InstantHitUnpack(Arguments))
+            end))
+        end)
+
+        InstantHitHookInstalled = Success and type(OldNamecall) == "function"
+        return InstantHitHookInstalled
+    end
+
+    RestoreInstantHitHook = function()
+        InstantHitEnabled = false
+    end
+
+    InstallInstantHitHook()
 
     local SilentAimBulletFunction
     local SilentAimOldBulletFunction
