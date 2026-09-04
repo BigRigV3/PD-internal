@@ -80,19 +80,6 @@ local ArmChamsEnabled = false
 local SelfChamsColor = Color3.fromRGB(126, 192, 255)
 local ArmChamsColor = Color3.fromRGB(126, 192, 255)
 local ClearLocalChams
-local FreecamEnabled = false
-local FreecamSpeed = 50
-local FreecamPosition
-local FreecamPitch = 0
-local FreecamYaw = 0
-local FreecamCameraType
-local FreecamCameraSubject
-local FreecamMouseBehavior
-local FreecamReplicationFocus
-local SetFreecamEnabled
-local UpdateFreecam
-local FreecamBound = false
-local FreecamRenderConnection
 local ThirdPersonEnabled = false
 local ThirdPersonDistance = 8
 local ThirdPersonCameraMode
@@ -467,10 +454,6 @@ local function UnloadAll()
         pcall(SetThirdPersonEnabled, false)
     end
     ThirdPersonEnabled = false
-    if FreecamEnabled and SetFreecamEnabled then
-        pcall(SetFreecamEnabled, false)
-    end
-    FreecamEnabled = false
     if ClearLocalChams then
         pcall(ClearLocalChams)
     end
@@ -1978,9 +1961,7 @@ local ExploitSection = MiscPage:Section({
 
 local radius = 5
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local FreecamUserInputService = game:GetService("UserInputService")
-local FreecamRunService = game:GetService("RunService")
-local FreecamBindName = "TypeshitFreecam"
+local MiscRunService = game:GetService("RunService")
 
 do
     local AntiAimSection = MiscPage:Section({Name = "anti aim", Side = 2})
@@ -2064,14 +2045,14 @@ do
         local Root = Character and Character:FindFirstChild("HumanoidRootPart")
         local Active = AntiAimEnabled or AntiAimUnderground
 
-        if not Active or FreecamEnabled or not Humanoid or not Root or Humanoid.Health <= 0 then
-            if Root and UndergroundBaseY and not FreecamEnabled then
+        if not Active or not Humanoid or not Root or Humanoid.Health <= 0 then
+            if Root and UndergroundBaseY then
                 local _, CurrentYaw, _ = Root.CFrame:ToOrientation()
                 Root.CFrame = CFrame.new(Root.Position.X, UndergroundBaseY, Root.Position.Z)
                     * CFrame.Angles(0, CurrentYaw, 0)
             end
             UndergroundBaseY = nil
-            if Humanoid and not FreecamEnabled then
+            if Humanoid then
                 Humanoid.AutoRotate = true
             end
             return
@@ -2116,129 +2097,6 @@ do
         end
     end)
 end
-
-SetFreecamEnabled = function(Value)
-    Value = Value == true
-    local Camera = workspace.CurrentCamera
-    local Character = player.Character
-    local Root = Character and Character:FindFirstChild("HumanoidRootPart")
-
-    if not Value and not FreecamEnabled and not FreecamCameraType and not FreecamCameraSubject then
-        return
-    end
-
-    if Value then
-        if FreecamEnabled or not Camera or not UpdateFreecam then
-            return
-        end
-
-        FreecamEnabled = true
-        FreecamCameraType = Camera.CameraType
-        FreecamCameraSubject = Camera.CameraSubject
-        FreecamMouseBehavior = FreecamUserInputService.MouseBehavior
-        pcall(function()
-            FreecamReplicationFocus = player.ReplicationFocus
-        end)
-        FreecamPosition = Camera.CFrame.Position
-        FreecamPitch, FreecamYaw = Camera.CFrame:ToOrientation()
-        Camera.CameraType = Enum.CameraType.Scriptable
-        FreecamUserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-        if not FreecamBound and not FreecamRenderConnection then
-            local Bound = pcall(function()
-                FreecamRunService:BindToRenderStep(
-                    FreecamBindName,
-                    Enum.RenderPriority.Camera.Value + 1,
-                    UpdateFreecam
-                )
-            end)
-
-            if Bound then
-                FreecamBound = true
-            else
-                FreecamRenderConnection = FreecamRunService.RenderStepped:Connect(UpdateFreecam)
-            end
-        end
-        return
-    end
-
-    FreecamEnabled = false
-    if FreecamBound then
-        FreecamRunService:UnbindFromRenderStep(FreecamBindName)
-        FreecamBound = false
-    end
-    if FreecamRenderConnection then
-        FreecamRenderConnection:Disconnect()
-        FreecamRenderConnection = nil
-    end
-    FreecamPosition = nil
-    local RestoreSubject = FreecamCameraSubject
-    if Camera then
-        Camera.CameraType = FreecamCameraType or Enum.CameraType.Custom
-
-        if RestoreSubject and RestoreSubject.Parent then
-            Camera.CameraSubject = RestoreSubject
-        else
-            local Humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-            if Humanoid then
-                Camera.CameraSubject = Humanoid
-            end
-        end
-    end
-    FreecamCameraType = nil
-    FreecamCameraSubject = nil
-    FreecamUserInputService.MouseBehavior = FreecamMouseBehavior or Enum.MouseBehavior.Default
-    FreecamMouseBehavior = nil
-    pcall(function()
-        player.ReplicationFocus = FreecamReplicationFocus
-    end)
-    FreecamReplicationFocus = nil
-    if Root then
-        Root.Anchored = false
-    end
-end
-
-ExploitSection:Toggle({
-    Name = "freecam",
-    Flag = "fc_on",
-    Default = false,
-    Callback = function(Value)
-        SetFreecamEnabled(Value)
-    end
-})
-
--- A standalone keybind is used so it can turn freecam on while the toggle is
--- currently off; keybinds attached directly to toggles are gated by the UI lib.
-local FreecamKeybindReady = false
-ExploitSection:Label({Name = "freecam key"}):Keybind({
-    Flag = "fc_key",
-    Mode = "Toggle",
-    Default = ,
-    Callback = function()
-        if not FreecamKeybindReady then
-            return
-        end
-
-        local Value = not FreecamEnabled
-        if Library.SetFlags["fc_on"] then
-            Library.SetFlags["fc_on"](Value)
-        else
-            SetFreecamEnabled(Value)
-        end
-    end
-})
-FreecamKeybindReady = true
-
-ExploitSection:Slider({
-    Name = "freecam speed",
-    Flag = "fc_speed",
-    Min = 10,
-    Max = 575,
-    Default = 50,
-    Decimals = 0,
-    Callback = function(Value)
-        FreecamSpeed = Value
-    end
-})
 
 SetThirdPersonEnabled = function(Value)
     Value = Value == true
@@ -2322,8 +2180,8 @@ ExploitSection:Slider({
     end
 })
 
-Library:Connect(FreecamRunService.RenderStepped, function()
-    if not ThirdPersonEnabled or FreecamEnabled then
+Library:Connect(MiscRunService.RenderStepped, function()
+    if not ThirdPersonEnabled then
         return
     end
 
@@ -2334,89 +2192,6 @@ Library:Connect(FreecamRunService.RenderStepped, function()
         player.DevEnableMouseLock = true
     end)
 end)
-
-task.spawn(function()
-    while not Unloading do
-        task.wait(0.2)
-
-        if FreecamEnabled and FreecamPosition then
-            local ClosestRoot
-            local ClosestDistance = math.huge
-
-            for _, Player in ipairs(Players:GetPlayers()) do
-                local Character = Player.Character
-                local Root = Character and Character:FindFirstChild("HumanoidRootPart")
-                if Root then
-                    local Distance = (FreecamPosition - Root.Position).Magnitude
-                    if Distance < ClosestDistance then
-                        ClosestRoot = Root
-                        ClosestDistance = Distance
-                    end
-                end
-            end
-
-            pcall(function()
-                player.ReplicationFocus = ClosestRoot
-            end)
-        end
-    end
-end)
-
-UpdateFreecam = function(DeltaTime)
-    if not FreecamEnabled then
-        return
-    end
-
-    local Camera = workspace.CurrentCamera
-    if not Camera then
-        return
-    end
-
-    if not FreecamPosition then
-        FreecamPosition = Camera.CFrame.Position
-        FreecamPitch, FreecamYaw = Camera.CFrame:ToOrientation()
-    end
-
-    Camera.CameraType = Enum.CameraType.Scriptable
-    FreecamUserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-    local MouseDelta = FreecamUserInputService:GetMouseDelta()
-    FreecamPitch = math.clamp(FreecamPitch - MouseDelta.Y * 0.005, -math.pi / 2 + 0.01, math.pi / 2 - 0.01)
-    FreecamYaw = FreecamYaw - MouseDelta.X * 0.005
-
-    local Rotation = CFrame.Angles(0, FreecamYaw, 0) * CFrame.Angles(FreecamPitch, 0, 0)
-    local Forward = Rotation.LookVector
-    local Right = Rotation.RightVector
-    local Direction = Vector3.new(0, 0, 0)
-
-    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.W) then
-        Direction = Direction + Forward
-    end
-    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.S) then
-        Direction = Direction - Forward
-    end
-    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.D) then
-        Direction = Direction + Right
-    end
-    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.A) then
-        Direction = Direction - Right
-    end
-    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.Space) then
-        Direction = Direction + Vector3.new(0, 1, 0)
-    end
-    if FreecamUserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-        Direction = Direction - Vector3.new(0, 1, 0)
-    end
-
-    if Direction.Magnitude > 0 then
-        Direction = Direction.Unit
-    end
-
-    local Speed = FreecamUserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-        and FreecamSpeed / 10
-        or FreecamSpeed
-    FreecamPosition = FreecamPosition + Direction * DeltaTime * Speed
-    Camera.CFrame = CFrame.new(FreecamPosition) * Rotation
-end
 
 local function StartUnlockAllSkins()
     if UnlockAllSkinsStarted then
