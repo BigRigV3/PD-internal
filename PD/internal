@@ -2212,7 +2212,7 @@ local FreecamKeybindReady = false
 ExploitSection:Label({Name = "freecam key"}):Keybind({
     Flag = "fc_key",
     Mode = "Toggle",
-    Default = Enum.KeyCode.F,
+    Default = ,
     Callback = function()
         if not FreecamKeybindReady then
             return
