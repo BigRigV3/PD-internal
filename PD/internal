@@ -1,3 +1,23 @@
+--#region Services and shared locals
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Stats = game:GetService("Stats")
+local TeleportService = game:GetService("TeleportService")
+
+
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+local SilentAimPlayers = Players
+local SilentAimUserInputService = UserInputService
+local SilentAimRunService = RunService
+local SilentAimReplicatedStorage = ReplicatedStorage
+local MiscRunService = RunService
+local AntiAimRunService = RunService
+--#endregion
+
 local BootstrapEnvironment = getgenv()
 if BootstrapEnvironment.TypeshitCleanup then
     local PreviousCleanup = BootstrapEnvironment.TypeshitCleanup
@@ -56,9 +76,17 @@ local SilentAimPartName = "Head"
 local SilentAimTeamCheck = true
 local SilentAimTargetPart
 local RestoreSilentAimHook
-local InstantHitEnabled = false
-local InstantHitMethod = "raycast"
-local RestoreInstantHitHook
+local BulletTracerEnabled = false
+local BulletTracerColor = Color3.fromRGB(255, 255, 255)
+local BulletTracerThickness = 0.25
+local BulletTracerLifetime = 1
+local NoSpreadEnabled = false
+local NoDropEnabled = false
+local IgnoreWaterEnabled = false
+local InstantReloadEnabled = false
+local InstantBulletEnabled = false
+local NoRecoilEnabled = false
+local RestoreWeaponNamecallHook
 local AntiAimEnabled = false
 local AntiAimUnderground = false
 local AntiAimMode = "Reverse"
@@ -93,12 +121,9 @@ local RestoreWeaponModsHook
 local NoFallEnabled = false
 local AntiDrownEnabled = false
 local RemoveWaterEnabled = false
-local JumpEnabled = false
-local JumpAmount = 0
 local HideClothesEnabled = false
 local ZoomEnabled = false
 local ZoomFOV = 50
-local OriginalMovementProperties
 local OriginalFOV
 local RestorePlayerMods
 local FOVCircle
@@ -223,8 +248,6 @@ do
 
     -- The replicated player folder contains the useful target-only stats. Put
     -- them in the existing status row so this works with the loaded UI library.
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local RunService = game:GetService("RunService")
     local TargetStatsConnection
     local TargetStatsRefresh = 0
 
@@ -292,9 +315,6 @@ do
     -- Target indicator follows the closest player inside the aimbot FOV.
     -- This is target selection/visualization only; no aim or camera logic is performed.
     do
-        local UserInputService = game:GetService("UserInputService")
-        local Players = game:GetService("Players")
-        local LocalPlayer = Players.LocalPlayer
         CurrentTarget = nil
         local TargetScanAccumulator = 0
         local LastFOVCircleRadius
@@ -322,7 +342,7 @@ do
         SetFOVCircleVisible(FOVCircleVisible)
 
         local function GetAimTarget()
-            local Camera = workspace.CurrentCamera
+            local Camera = Workspace.CurrentCamera
             local Character = LocalPlayer.Character
 
             if not Camera or not Character or not AimbotFOVEnabled then
@@ -405,8 +425,6 @@ do
 end
 
 do
-    local RunService = game:GetService("RunService")
-    local Stats = game:GetService("Stats")
     local Elapsed = 0
     local FrameCount = 0
 
@@ -457,6 +475,8 @@ local function UnloadAll()
     AimbotFOVEnabled = false
     SilentAimEnabled = false
     SilentAimTargetPart = nil
+    InstantBulletEnabled = false
+    NoRecoilEnabled = false
     AntiAimEnabled = false
     AntiAimUnderground = false
     SkinChangerEnabled = false
@@ -490,8 +510,8 @@ local function UnloadAll()
     if RestoreSilentAimHook then
         pcall(RestoreSilentAimHook)
     end
-    if RestoreInstantHitHook then
-        pcall(RestoreInstantHitHook)
+    if RestoreWeaponNamecallHook then
+        pcall(RestoreWeaponNamecallHook)
     end
     if RestorePlayerMods then
         pcall(RestorePlayerMods)
@@ -834,8 +854,6 @@ do
 
     local LocalChamsHighlights = {}
     local LocalChamsRefresh = 0
-    local LocalChamsPlayer = game:GetService("Players").LocalPlayer
-
     ClearLocalChams = function()
         for Part, Highlight in pairs(LocalChamsHighlights) do
             pcall(function()
@@ -911,7 +929,7 @@ do
         end
 
         local Desired = {}
-        local Character = LocalChamsPlayer.Character
+        local Character = LocalPlayer.Character
         if SelfChamsEnabled and Character then
             for _, Part in ipairs(Character:GetDescendants()) do
                 if Part:IsA("BasePart")
@@ -925,7 +943,7 @@ do
         end
 
         if ArmChamsEnabled then
-            local Camera = workspace.CurrentCamera
+            local Camera = Workspace.CurrentCamera
             local Viewmodel = Camera and Camera:FindFirstChildOfClass("Model")
             if Viewmodel then
                 for _, Part in ipairs(Viewmodel:GetDescendants()) do
@@ -950,7 +968,7 @@ do
         end
     end
 
-    Library:Connect(game:GetService("RunService").RenderStepped, UpdateLocalChams)
+    Library:Connect(RunService.RenderStepped, UpdateLocalChams)
 
     Chams:Toggle({
         Name = "self chams",
@@ -1239,7 +1257,7 @@ do
     end
 
     SyncESPFromMenu()
-    Library:Connect(game:GetService("RunService").RenderStepped, function(DeltaTime)
+    Library:Connect(RunService.RenderStepped, function(DeltaTime)
         ESPMenuRefresh = ESPMenuRefresh + DeltaTime
         if ESPMenuRefresh < 0.1 then
             return
@@ -1278,30 +1296,38 @@ do
     local WeaponModsSection = AimbotPage:Section({Name = "weapon mods", Side = 2})
 
     WeaponModsSection:Toggle({
-        Name = "instant aim",
-        Flag = "instantaim",
-        Default = false
+        Name = "instant reload",
+        Flag = "instantreload",
+        Default = false,
+        Callback = function(Value) InstantReloadEnabled = Value == true end
     })
 
     WeaponModsSection:Toggle({
         Name = "instant hit",
-        Flag = "instant_hit",
+        Flag = "instantbullet",
         Default = false,
-        Callback = function(Value)
-            InstantHitEnabled = Value == true
-        end
+        Callback = function(Value) InstantBulletEnabled = Value == true end
     })
 
-    WeaponModsSection:Dropdown({
-        Name = "instant hit method",
-        Flag = "instant_hit_method",
-        Items = {"raycast", "invoke"},
-        Default = "raycast",
-        Callback = function(Value)
-            if type(Value) == "string" then
-                InstantHitMethod = Value
-            end
-        end
+    WeaponModsSection:Toggle({
+        Name = "no spread",
+        Flag = "nospread",
+        Default = false,
+        Callback = function(Value) NoSpreadEnabled = Value == true end
+    })
+
+    WeaponModsSection:Toggle({
+        Name = "no drop",
+        Flag = "nodrop",
+        Default = false,
+        Callback = function(Value) NoDropEnabled = Value == true end
+    })
+
+    WeaponModsSection:Toggle({
+        Name = "ignore water",
+        Flag = "ignorewater",
+        Default = false,
+        Callback = function(Value) IgnoreWaterEnabled = Value == true end
     })
 
     WeaponModsSection:Toggle({
@@ -1392,6 +1418,19 @@ do
     WeaponModsSection:Toggle({
         Name = "no recoil",
         Flag = "norecoil",
+        Default = false,
+        Callback = function(Value) NoRecoilEnabled = Value == true end
+    })
+
+    WeaponModsSection:Toggle({
+        Name = "remove weight",
+        Flag = "removeweight",
+        Default = false
+    })
+
+    WeaponModsSection:Toggle({
+        Name = "remove aim restrictions",
+        Flag = "removeaimrestrictions",
         Default = false
     })
 
@@ -1421,6 +1460,44 @@ do
         return nil
     end
 
+    -- Save values only when an enabled feature actually overrides them.
+    local WeaponOverrides = setmetatable({}, {__mode = "k"})
+
+    local function SetWeaponOverride(Object, Property, Enabled, Value)
+        if not Object then
+            return
+        end
+
+        local Saved = WeaponOverrides[Object]
+        if Enabled then
+            if not Saved then
+                Saved = {}
+                WeaponOverrides[Object] = Saved
+            end
+            if not Saved[Property] then
+                Saved[Property] = {Value = Object[Property]}
+            end
+            Object[Property] = Value
+        elseif Saved and Saved[Property] then
+            Object[Property] = Saved[Property].Value
+            Saved[Property] = nil
+            if next(Saved) == nil then
+                WeaponOverrides[Object] = nil
+            end
+        end
+    end
+
+    local function RestoreWeaponOverrides()
+        for Object, Saved in pairs(WeaponOverrides) do
+            for Property, Original in pairs(Saved) do
+                pcall(function()
+                    Object[Property] = Original.Value
+                end)
+            end
+        end
+        table.clear(WeaponOverrides)
+    end
+
     local function ApplyWeaponMods(Weapon)
         local Flags = Library.Flags
         local Springs = Weapon.springs
@@ -1429,153 +1506,54 @@ do
             return
         end
 
-        if Flags.instantaim then
-            Weapon.AimInSpeed = 0
-            Weapon.AimOutSpeed = 0
-        end
+        SetWeaponOverride(Weapon, "FireModes", Flags.allfiremode == true, {"Auto", "Semi"})
+        SetWeaponOverride(Weapon, "EquipTValue", Flags.instantequip == true, 100)
+        SetWeaponOverride(Weapon, "FireRate", Flags.fireratechanger == true, Flags.fireratedelay)
 
-        if Flags.allfiremode then
-            Weapon.FireModes = {"Auto", "Semi"}
-        end
-
-        if Flags.instantequip then
-            Weapon.EquipTValue = 100
-        end
-
-        if Flags.fireratechanger then
-            Weapon.FireRate = Flags.fireratedelay
-        end
-
-        if Flags.modeloffset then
-            local Offset = CFrame.new(Vector3.new(
-                tonumber(Flags.modeloffsetx) or 0,
-                tonumber(Flags.modeloffsety) or 0,
-                tonumber(Flags.modeloffsetz) or 0
-            ))
-            Weapon.sprintOffSet = Offset
-            Weapon.sprintIdleOffset = Offset
-            Weapon.weaponOffSet = Offset
-        end
-
-        local WallTouchTilt = Springs.wallTouchTilt
-        if Flags.noobstructions then
-            Weapon.TouchWallPosY = 0
-            Weapon.TouchWallPosZ = 0
-            Weapon.TouchWallRotX = 0
-            Weapon.TouchWallRotY = 0
-
-            if WallTouchTilt then
-                WallTouchTilt.Force = 0
-                WallTouchTilt.Speed = 0
+        for _, Property in ipairs({"sprintOffSet", "sprintIdleOffset", "weaponOffSet"}) do
+            local Enabled = Flags.modeloffset == true
+            local Value
+            if Enabled then
+                local Saved = WeaponOverrides[Weapon]
+                local Original = Weapon[Property]
+                if Saved and Saved[Property] then
+                    Original = Saved[Property].Value
+                end
+                local Offset = CFrame.new(
+                    tonumber(Flags.modeloffsetx) or 0,
+                    tonumber(Flags.modeloffsety) or 0,
+                    tonumber(Flags.modeloffsetz) or 0
+                )
+                Value = (typeof(Original) == "CFrame" and Original or CFrame.new()) * Offset
             end
-        elseif WallTouchTilt then
-            WallTouchTilt.Force = 50
-            WallTouchTilt.Speed = 4
+            SetWeaponOverride(Weapon, Property, Enabled, Value)
         end
 
-        local Sway = Springs.sway
-        local GunSway = Springs.gunSway
-        if Flags.nosway then
-            if Sway then
-                Sway.Position = Vector3.new(0, 0, 0)
-                Sway.Force = 0
-                Sway.Speed = 0
-            end
-            if GunSway then
-                GunSway.Position = Vector3.new(0, 0, 0)
-                GunSway.Force = 0
-                GunSway.Speed = 0
-            end
-        else
-            if Sway then
-                Sway.Force = 100
-                Sway.Speed = 4
-            end
-            if GunSway then
-                GunSway.Force = 50
-                GunSway.Speed = 4
+        for _, Property in ipairs({"TouchWallPosY", "TouchWallPosZ", "TouchWallRotX", "TouchWallRotY"}) do
+            SetWeaponOverride(Weapon, Property, Flags.noobstructions == true, 0)
+        end
+
+        local function SetSpring(Spring, Enabled, ResetMotion)
+            SetWeaponOverride(Spring, "Force", Enabled, 0)
+            SetWeaponOverride(Spring, "Speed", Enabled, 0)
+            if ResetMotion then
+                SetWeaponOverride(Spring, "Position", Enabled, Vector3.new(0, 0, 0))
+                SetWeaponOverride(Spring, "Velocity", Enabled, Vector3.new(0, 0, 0))
             end
         end
 
-        local LeanAlpha = Springs.leanAlpha
-        if LeanAlpha then
-            LeanAlpha.Force = 50
-            LeanAlpha.Speed = Flags.instantlean and 50 or 4
+        SetSpring(Springs.wallTouchTilt, Flags.noobstructions == true, false)
+        SetSpring(Springs.sway, Flags.nosway == true, true)
+        SetSpring(Springs.gunSway, Flags.nosway == true, true)
+        SetWeaponOverride(Springs.leanAlpha, "Force", Flags.instantlean == true, 50)
+        SetWeaponOverride(Springs.leanAlpha, "Speed", Flags.instantlean == true, 50)
+
+        for _, Name in ipairs({"jumpTilt", "walkCycle", "sprintCycle", "strafeTilt"}) do
+            SetSpring(Springs[Name], Flags.nobobbing == true, true)
         end
 
-        local JumpTilt = Springs.jumpTilt
-        local WalkCycle = Springs.walkCycle
-        local SprintCycle = Springs.sprintCycle
-        local StrafeTilt = Springs.strafeTilt
-        if Flags.nobobbing then
-            if JumpTilt then
-                JumpTilt.Position = Vector3.new(0, 0, 0)
-                JumpTilt.Force = 0
-                JumpTilt.Speed = 0
-            end
-            if WalkCycle then
-                WalkCycle.Position = Vector3.new(0, 0, 0)
-                WalkCycle.Force = 0
-                WalkCycle.Speed = 0
-            end
-            if SprintCycle then
-                SprintCycle.Position = Vector3.new(0, 0, 0)
-                SprintCycle.Force = 0
-                SprintCycle.Speed = 0
-            end
-            if StrafeTilt then
-                StrafeTilt.Position = Vector3.new(0, 0, 0)
-                StrafeTilt.Force = 0
-                StrafeTilt.Speed = 0
-            end
-        else
-            if JumpTilt then
-                JumpTilt.Force = 90
-                JumpTilt.Speed = 4
-            end
-            if WalkCycle then
-                WalkCycle.Force = 50
-                WalkCycle.Speed = 4
-            end
-            if SprintCycle then
-                SprintCycle.Force = 50
-                SprintCycle.Speed = 4
-            end
-            if StrafeTilt then
-                StrafeTilt.Force = 50
-                StrafeTilt.Speed = 4
-            end
-        end
-
-        local CameraRecoil = Springs.cameraRecoil
-        local RecoilRot = Springs.recoilRot
-        local RecoilPos = Springs.recoilPos
-        if Flags.norecoil then
-            if CameraRecoil then
-                CameraRecoil.Force = 0
-                CameraRecoil.Speed = 0
-            end
-            if RecoilRot then
-                RecoilRot.Force = 0
-                RecoilRot.Speed = 0
-            end
-            if RecoilPos then
-                RecoilPos.Force = 0
-                RecoilPos.Speed = 0
-            end
-        else
-            if CameraRecoil then
-                CameraRecoil.Force = 100
-                CameraRecoil.Speed = 6
-            end
-            if RecoilRot then
-                RecoilRot.Force = 35
-                RecoilRot.Speed = 3
-            end
-            if RecoilPos then
-                RecoilPos.Force = 75
-                RecoilPos.Speed = 5
-            end
+        for _, Name in ipairs({"cameraRecoil", "recoilRot", "recoilPos"}) do
+            SetSpring(Springs[Name], Flags.norecoil == true, false)
         end
     end
 
@@ -1583,7 +1561,6 @@ do
     local OldUpdateClient
     local WeaponModsHook
     local WeaponModsHookInstalled = false
-    local Unpack = table.unpack or unpack
 
     local function InstallWeaponModsHook()
         if WeaponModsHookInstalled then
@@ -1597,14 +1574,13 @@ do
         end
 
         WeaponModsHook = WrapWeaponModsHook(function(...)
-            local Arguments = {...}
-            local Weapon = Arguments[1]
+            local Weapon = select(1, ...)
 
             if type(Weapon) == "table" then
                 pcall(ApplyWeaponMods, Weapon)
             end
 
-            return OldUpdateClient(Unpack(Arguments))
+            return OldUpdateClient(...)
         end)
 
         local Success = pcall(function()
@@ -1622,6 +1598,7 @@ do
     end
 
     RestoreWeaponModsHook = function()
+        RestoreWeaponOverrides()
         if FPSGameVars and OldUpdateClient and WeaponModsHook
             and rawget(FPSGameVars, "updateClient") == WeaponModsHook
         then
@@ -1648,11 +1625,7 @@ end
 
 do
     local SilentAimSection = AimbotPage:Section({Name = "silent aim", Side = 1})
-    local SilentAimPlayers = game:GetService("Players")
-    local SilentAimLocalPlayer = SilentAimPlayers.LocalPlayer
-    local SilentAimUserInputService = game:GetService("UserInputService")
-    local SilentAimRunService = game:GetService("RunService")
-    local SilentAimReplicatedStorage = game:GetService("ReplicatedStorage")
+    local SilentAimLocalPlayer = LocalPlayer
 
     SilentAimSection:Toggle({
         Name = "silent aim",
@@ -1687,6 +1660,48 @@ do
         end
     })
 
+    SilentAimSection:Toggle({
+        Name = "bullet tracers",
+        Flag = "bullet_tracers",
+        Default = false,
+        Callback = function(Value)
+            BulletTracerEnabled = Value == true
+        end
+    })
+
+    SilentAimSection:Label({Name = "tracer color"}):Colorpicker({
+        Flag = "bullet_tracer_color",
+        Default = BulletTracerColor,
+        Callback = function(Value)
+            BulletTracerColor = Value
+        end
+    })
+
+    SilentAimSection:Slider({
+        Name = "tracer thickness",
+        Flag = "bullet_tracer_thickness",
+        Min = 0.05,
+        Max = 2,
+        Default = BulletTracerThickness,
+        Decimals = 0.05,
+        Callback = function(Value)
+            BulletTracerThickness = Value
+        end
+    })
+
+    SilentAimSection:Slider({
+        Name = "tracer lifetime",
+        Flag = "bullet_tracer_lifetime",
+        Min = 0.1,
+        Max = 5,
+        Default = BulletTracerLifetime,
+        Decimals = 0.1,
+        Suffix = "s",
+        Callback = function(Value)
+            BulletTracerLifetime = Value
+        end
+    })
+
     local function ResolveSilentAimPart(Character)
         if not Character then
             return nil
@@ -1702,7 +1717,7 @@ do
             return nil
         end
 
-        local Camera = workspace.CurrentCamera
+        local Camera = Workspace.CurrentCamera
         if not Camera then
             return nil
         end
@@ -1744,15 +1759,67 @@ do
         SilentAimTargetPart = GetSilentAimTarget()
     end)
 
-    local InstantHitHookInstalled = false
-    local InstantHitUnpack = table.unpack or unpack
+    local function CreateBulletTracer(Origin, Position)
+        if not BulletTracerEnabled or typeof(Origin) ~= "Vector3" or typeof(Position) ~= "Vector3" then
+            return
+        end
 
-    local function InstallInstantHitHook()
-        if InstantHitHookInstalled
+        local Parent = Workspace:FindFirstChild("NoCollision") or Workspace
+        local StartPart = Instance.new("Part")
+        local EndPart = Instance.new("Part")
+        StartPart.Anchored = true
+        EndPart.Anchored = true
+        StartPart.CanCollide = false
+        EndPart.CanCollide = false
+        StartPart.CanQuery = false
+        EndPart.CanQuery = false
+        StartPart.Transparency = 1
+        EndPart.Transparency = 1
+        StartPart.Size = Vector3.zero
+        EndPart.Size = Vector3.zero
+        StartPart.Position = Origin
+        EndPart.Position = Position
+        StartPart.Parent = Parent
+        EndPart.Parent = Parent
+
+        local StartAttachment = Instance.new("Attachment")
+        local EndAttachment = Instance.new("Attachment")
+        StartAttachment.Parent = StartPart
+        EndAttachment.Parent = EndPart
+
+        local Beam = Instance.new("Beam")
+        Beam.Color = ColorSequence.new(BulletTracerColor)
+        Beam.LightEmission = 1
+        Beam.LightInfluence = 0
+        Beam.Texture = "rbxassetid://446111271"
+        Beam.TextureMode = Enum.TextureMode.Stretch
+        Beam.Transparency = NumberSequence.new(0)
+        Beam.Width0 = BulletTracerThickness
+        Beam.Width1 = BulletTracerThickness
+        Beam.FaceCamera = true
+        Beam.Segments = 1
+        Beam.Attachment0 = StartAttachment
+        Beam.Attachment1 = EndAttachment
+        Beam.Parent = Parent
+
+        task.delay(BulletTracerLifetime, function()
+            pcall(function()
+                Beam:Destroy()
+                StartPart:Destroy()
+                EndPart:Destroy()
+            end)
+        end)
+    end
+
+    local WeaponNamecallHookInstalled = false
+    local WeaponNamecallUnpack = table.unpack or unpack
+
+    local function InstallWeaponNamecallHook()
+        if WeaponNamecallHookInstalled
             or type(hookmetamethod) ~= "function"
             or type(getnamecallmethod) ~= "function"
         then
-            return InstantHitHookInstalled
+            return WeaponNamecallHookInstalled
         end
 
         local OldNamecall
@@ -1763,68 +1830,83 @@ do
         local Success = pcall(function()
             OldNamecall = hookmetamethod(game, "__namecall", MakeClosure(function(self, ...)
                 local Arguments = {...}
+                local ArgumentCount = select("#", ...)
                 local Method = tostring(getnamecallmethod())
-                local TargetPart = SilentAimTargetPart
 
-                if InstantHitEnabled
-                    and TargetPart
-                    and TargetPart.Parent
-                    and Method == "Raycast"
+                if Method == "GetAttribute" then
+                    if NoSpreadEnabled and Arguments[1] == "AccuracyDeviation" then
+                        return 0
+                    end
+                    if NoDropEnabled and Arguments[1] == "ProjectileDrop" then
+                        return 0
+                    end
+                    if (NoRecoilEnabled or Library.Flags.norecoil == true) and (
+                        Arguments[1] == "Recoil"
+                        or Arguments[1] == "HRecoilMod"
+                        or Arguments[1] == "VRecoilMod"
+                    ) then
+                        return 0
+                    end
+                    if Library.Flags.removeweight and (
+                        Arguments[1] == "MovementModifer"
+                        or Arguments[1] == "MovementModifier"
+                        or Arguments[1] == "GearWeight"
+                    ) then
+                        return 0
+                    end
+                    if Library.Flags.removeaimrestrictions and Arguments[1] == "BlockADS" then
+                        return false
+                    end
+                elseif Method == "InvokeServer"
+                    and InstantReloadEnabled
+                    and self.Name == "Reload"
+                then
+                    Arguments[2] = 0
+                elseif Method == "Raycast"
                 then
                     local CallerInfo = type(getinfo) == "function" and getinfo(3)
                     local CallerSource = CallerInfo and CallerInfo.short_src
-                    if type(CallerSource) == "string" and string.find(CallerSource, "Bullet", 1, true) then
-                        local Origin = Arguments[1]
-                        if typeof(Origin) == "Vector3" then
-                            local Direction = TargetPart.Position - Origin
-                            if Direction.Magnitude > 0 then
-                                Arguments[2] = Direction.Unit * Direction.Magnitude * 10
-                            end
-                        end
+                    local IsBulletCaller = type(CallerSource) == "string"
+                        and string.find(CallerSource, "Bullet", 1, true) ~= nil
+                    local Traceback = ""
+                    if type(debug) == "table" and type(debug.traceback) == "function" then
+                        Traceback = debug.traceback()
                     end
-                elseif InstantHitEnabled
-                    and InstantHitMethod == "invoke"
-                    and (Method == "InvokeServer" or Method == "invokeServer")
-                    and self.Name == "FireProjectile"
-                then
-                    local Origin = Arguments[1]
-                    if TargetPart
-                        and TargetPart.Parent
-                        and typeof(Origin) == "Vector3"
+
+                    if IgnoreWaterEnabled and IsBulletCaller and Arguments[3] then
+                        pcall(function() Arguments[3].IgnoreWater = true end)
+                    end
+
+                    -- Project Delta's instant-bullet implementation extends the
+                    -- bullet ray so the projectile reaches its destination
+                    -- immediately. Restrict it to the bullet step to avoid
+                    -- changing unrelated game raycasts.
+                    if (InstantBulletEnabled or Library.Flags.instantbullet == true)
+                        and typeof(Arguments[2]) == "Vector3"
+                        and (IsBulletCaller or string.find(Traceback, "onStep", 1, true))
                     then
-                        local Distance = (TargetPart.Position - Origin).Magnitude
-                        task.spawn(function()
-                            pcall(function()
-                                SilentAimReplicatedStorage.Remotes.ProjectileInflict:FireServer(
-                                    TargetPart,
-                                    CFrame.new(0, 0.2, -0.2),
-                                    Arguments[2],
-                                    (tonumber(Arguments[3]) or 0) + Distance * 0.0065
-                                )
-                            end)
-                        end)
+                        Arguments[2] = Arguments[2] * 9e9
                     end
-                elseif InstantHitEnabled
-                    and InstantHitMethod == "raycast"
-                    and (Method == "FireServer" or Method == "fireServer")
-                    and self.Name == "ProjectileInflict"
-                then
-                    Arguments[4] = 0 / 0
                 end
 
-                return OldNamecall(self, InstantHitUnpack(Arguments))
+                return OldNamecall(self, WeaponNamecallUnpack(Arguments, 1, ArgumentCount))
             end))
         end)
 
-        InstantHitHookInstalled = Success and type(OldNamecall) == "function"
-        return InstantHitHookInstalled
+        WeaponNamecallHookInstalled = Success and type(OldNamecall) == "function"
+        return WeaponNamecallHookInstalled
     end
 
-    RestoreInstantHitHook = function()
-        InstantHitEnabled = false
+    RestoreWeaponNamecallHook = function()
+        InstantReloadEnabled = false
+        InstantBulletEnabled = false
+        NoRecoilEnabled = false
+        NoSpreadEnabled = false
+        NoDropEnabled = false
+        IgnoreWaterEnabled = false
     end
 
-    InstallInstantHitHook()
+    InstallWeaponNamecallHook()
 
     local SilentAimBulletFunction
     local SilentAimOldBulletFunction
@@ -1879,6 +1961,7 @@ do
 
         SilentAimHook = WrapSilentAimHook(function(...)
             local Arguments = {...}
+            local ArgumentCount = select("#", ...)
             local TargetPart = SilentAimTargetPart
             if SilentAimEnabled and TargetPart and TargetPart.Parent then
                 local AimData = Arguments[5]
@@ -1892,11 +1975,12 @@ do
                 if not Origin then
                     local Character = SilentAimLocalPlayer.Character
                     local Head = Character and Character:FindFirstChild("Head")
-                    local Camera = workspace.CurrentCamera
+                    local Camera = Workspace.CurrentCamera
                     Origin = Head and Head.Position or (Camera and Camera.CFrame.Position)
                 end
 
                 if Origin then
+                    CreateBulletTracer(Origin, TargetPart.Position)
                     Arguments[5] = {
                         CFrame = CFrame.new(Origin, TargetPart.Position),
                         Position = Origin
@@ -1904,7 +1988,7 @@ do
                 end
             end
 
-            return SilentAimOldBulletFunction(Unpack(Arguments))
+            return SilentAimOldBulletFunction(Unpack(Arguments, 1, ArgumentCount))
         end)
 
         local Success, Original = pcall(function()
@@ -1950,6 +2034,50 @@ do
         end
     end)
 end
+
+local WorldPage = Window:Page({Name = "world"})
+
+do 
+    local LightingSection = WorldPage:Section({Name = "lighting", Side = 1})
+    local AmbienceColor = Color3.fromRGB(255, 255, 255)
+    local OriginalAmbient = Lighting.Ambient
+    local OriginalOutdoorAmbient = Lighting.OutdoorAmbient
+    local AmbienceEnabled = false
+
+
+
+
+    LightingSection:Toggle({
+        Name = "Ambience change",
+        Flag = "Change ambience",
+        Default = false,
+        Callback = function(Value)
+            AmbienceEnabled = Value == true
+            if Value == true then
+                Lighting.Ambient = AmbienceColor
+                Lighting.OutdoorAmbient = AmbienceColor
+            else
+                Lighting.Ambient = OriginalAmbient
+                Lighting.OutdoorAmbient = OriginalOutdoorAmbient
+            end
+        end
+    })
+
+    LightingSection:Label({Name = "Ambience color"}):Colorpicker({
+        Flag = "ambience_color",
+        Default = Color3.fromRGB(255, 255, 255),
+        Callback = function(Value)
+            if typeof(Value) == "Color3" then
+                AmbienceColor = Value
+                if AmbienceEnabled then
+                    Lighting.Ambient = Value
+                    Lighting.OutdoorAmbient = Value
+                end
+            end
+        end
+    })
+    end
+
 
 local UIPage = Window:Page({Name = "ui"})
 
@@ -2040,8 +2168,7 @@ do -- ui elements
     })
 end
 
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local player = LocalPlayer
 
 local MiscPage = Window:Page({
     Name = "misc"
@@ -2053,12 +2180,60 @@ local ExploitSection = MiscPage:Section({
 })
 
 local radius = 5
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local MiscRunService = game:GetService("RunService")
+
+do
+    local InventorySection = MiscPage:Section({Name = "inventory", Side = 2})
+    local InventoryStatus = InventorySection:Label({Name = "press refresh"})
+    local InventoryLabels = {}
+
+    local function ClearInventoryLabels()
+        for _, Label in ipairs(InventoryLabels) do
+            pcall(function()
+                Label.Items.Label.Instance:Destroy()
+            end)
+        end
+        table.clear(InventoryLabels)
+    end
+
+    local function RefreshInventory()
+        ClearInventoryLabels()
+
+        local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+        local LocalFolder = PlayerFolder and PlayerFolder:FindFirstChild(player.Name)
+        local Inventory = LocalFolder and LocalFolder:FindFirstChild("Inventory")
+        if not Inventory then
+            InventoryStatus:SetText("inventory unavailable")
+            return
+        end
+
+        local Items = {}
+        for _, Item in ipairs(Inventory:GetChildren()) do
+            local DisplayName = Item.Name
+            if Item:IsA("ObjectValue") and Item.Value then
+                DisplayName = DisplayName .. " -> " .. Item.Value.Name
+            elseif Item:IsA("StringValue") and Item.Value ~= "" then
+                DisplayName = DisplayName .. " = " .. Item.Value
+            end
+            table.insert(Items, DisplayName)
+        end
+        table.sort(Items)
+
+        InventoryStatus:SetText(#Items > 0 and ("items: " .. #Items) or "inventory empty")
+        for _, ItemText in ipairs(Items) do
+            table.insert(InventoryLabels, InventorySection:Label({Name = ItemText}))
+        end
+    end
+
+    InventorySection:Button({
+        Name = "refresh inventory",
+        Callback = RefreshInventory
+    })
+
+    task.delay(1, RefreshInventory)
+end
 
 do
     local AntiAimSection = MiscPage:Section({Name = "anti aim", Side = 2})
-    local AntiAimRunService = game:GetService("RunService")
     local UpdateTiltRemote = ReplicatedStorage:FindFirstChild("Remotes")
         and ReplicatedStorage.Remotes:FindFirstChild("UpdateTilt")
     local LastAntiAimTilt = 0
@@ -2151,7 +2326,7 @@ do
             return
         end
 
-        local Camera = workspace.CurrentCamera
+        local Camera = Workspace.CurrentCamera
         if not Camera then
             return
         end
@@ -2275,23 +2450,6 @@ ExploitSection:Toggle({
 })
 
 ExploitSection:Toggle({
-    Name = "jump",
-    Flag = "jump",
-    Default = false,
-    Callback = function(Value) JumpEnabled = Value == true end
-})
-
-ExploitSection:Slider({
-    Name = "jump amount",
-    Flag = "jump_amount",
-    Min = 0,
-    Max = 200,
-    Default = 0,
-    Decimals = 1,
-    Callback = function(Value) JumpAmount = Value end
-})
-
-ExploitSection:Toggle({
     Name = "zoom",
     Flag = "zoom",
     Default = false,
@@ -2350,13 +2508,6 @@ ExploitSection:Slider({
 RestorePlayerMods = function()
     local Character = player.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-    if Humanoid and OriginalMovementProperties then
-        pcall(function()
-            Humanoid.WalkSpeed = OriginalMovementProperties.WalkSpeed
-            Humanoid.JumpPower = OriginalMovementProperties.JumpPower
-            Humanoid.JumpHeight = OriginalMovementProperties.JumpHeight
-        end)
-    end
     local Settings = ReplicatedStorage:FindFirstChild("Players")
         and ReplicatedStorage.Players:FindFirstChild(player.Name)
         and ReplicatedStorage.Players[player.Name]:FindFirstChild("Settings")
@@ -2371,25 +2522,6 @@ Library:Connect(MiscRunService.Heartbeat, function()
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
     if not Humanoid then return end
 
-    if not OriginalMovementProperties then
-        OriginalMovementProperties = {
-            WalkSpeed = Humanoid.WalkSpeed,
-            JumpPower = Humanoid.JumpPower,
-            JumpHeight = Humanoid.JumpHeight
-        }
-    end
-
-    if JumpEnabled then
-        if Humanoid.UseJumpPower then
-            Humanoid.JumpPower = OriginalMovementProperties.JumpPower + JumpAmount
-        else
-            Humanoid.JumpHeight = OriginalMovementProperties.JumpHeight + JumpAmount
-        end
-    else
-        Humanoid.JumpPower = OriginalMovementProperties.JumpPower
-        Humanoid.JumpHeight = OriginalMovementProperties.JumpHeight
-    end
-
     Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, not AntiDrownEnabled)
 
     if NoFallEnabled then
@@ -2402,9 +2534,9 @@ Library:Connect(MiscRunService.Heartbeat, function()
         end
     end
 
-    if RemoveWaterEnabled and Humanoid.RootPart and workspace.Terrain then
+    if RemoveWaterEnabled and Humanoid.RootPart and Workspace.Terrain then
         pcall(function()
-            workspace.Terrain:ReplaceMaterialInTransform(
+            Workspace.Terrain:ReplaceMaterialInTransform(
                 Humanoid.RootPart.CFrame,
                 Vector3.new(20, 20, 20),
                 Enum.Material.Water,
@@ -2649,7 +2781,7 @@ local function StartUnlockAllSkins()
                             end
 
                             ApplyTo(player.Character)
-                            local Camera = workspace.CurrentCamera
+                            local Camera = Workspace.CurrentCamera
                             if Camera then
                                 for _, Child in ipairs(Camera:GetChildren()) do
                                     if Child:GetAttribute("Temp") or Child.Name == player.Name then
@@ -2952,15 +3084,15 @@ ExploitSection:Button({
         local hrp = character:WaitForChild("HumanoidRootPart")
 
         local targets = {
-            workspace:FindFirstChild("Jake"),
+            Workspace:FindFirstChild("Jake"),
            
-            workspace:FindFirstChild("Boss"),
-            workspace:FindFirstChild("Mihkel"),
-            workspace:FindFirstChild("Nurse"),
-            workspace:FindFirstChild("Blaze"),
-            workspace:FindFirstChild("Seryozha"),
-            workspace:FindFirstChild("Tarmo"),
-            workspace:FindFirstChild("Anna"),
+            Workspace:FindFirstChild("Boss"),
+            Workspace:FindFirstChild("Mihkel"),
+            Workspace:FindFirstChild("Nurse"),
+            Workspace:FindFirstChild("Blaze"),
+            Workspace:FindFirstChild("Seryozha"),
+            Workspace:FindFirstChild("Tarmo"),
+            Workspace:FindFirstChild("Anna"),
         }
 
         local validTargets = {}
@@ -3178,15 +3310,11 @@ end
 
 do -- server
     local Copy = setclipboard or toclipboard
-    local TeleportService = game:GetService("TeleportService")
-    local Players = game:GetService("Players")
 
     local ServerSection = MiscPage:Section({Name = "server", Side = 2})
         ServerSection:Button({
             Name = "rejoin",
             Callback = function()
-                local LocalPlayer = Players.LocalPlayer
-
                 if #Players:GetPlayers() <= 1 then
                     TeleportService:Teleport(game.PlaceId, LocalPlayer)
                 else
