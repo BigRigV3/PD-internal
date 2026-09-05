@@ -2183,53 +2183,206 @@ local radius = 5
 
 do
     local InventorySection = MiscPage:Section({Name = "inventory", Side = 2})
-    local InventoryStatus = InventorySection:Label({Name = "press refresh"})
-    local InventoryLabels = {}
-
-    local function ClearInventoryLabels()
-        for _, Label in ipairs(InventoryLabels) do
-            pcall(function()
-                Label.Items.Label.Instance:Destroy()
-            end)
-        end
-        table.clear(InventoryLabels)
-    end
-
-    local function RefreshInventory()
-        ClearInventoryLabels()
-
-        local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
-        local LocalFolder = PlayerFolder and PlayerFolder:FindFirstChild(player.Name)
-        local Inventory = LocalFolder and LocalFolder:FindFirstChild("Inventory")
-        if not Inventory then
-            InventoryStatus:SetText("inventory unavailable")
-            return
-        end
-
-        local Items = {}
-        for _, Item in ipairs(Inventory:GetChildren()) do
-            local DisplayName = Item.Name
-            if Item:IsA("ObjectValue") and Item.Value then
-                DisplayName = DisplayName .. " -> " .. Item.Value.Name
-            elseif Item:IsA("StringValue") and Item.Value ~= "" then
-                DisplayName = DisplayName .. " = " .. Item.Value
+    if type(Library.InventoryViewer) ~= "function" then
+        InventorySection:Label({Name = "update uilib to use inventory viewer"})
+    else
+        local Enabled = false
+        local SourceMode = "target"
+        local MinimumEnabled = false
+        local MinimumValue = 0
+        local Whitelist = {}
+        local LastSignature
+        local LastTarget
+        local Elapsed = 0
+        local ViewerToggle
+        local Viewer = Library:InventoryViewer({
+            Name = "Inventory viewer",
+            OnClose = function()
+                if ViewerToggle then
+                    ViewerToggle:Set(false)
+                end
             end
-            table.insert(Items, DisplayName)
-        end
-        table.sort(Items)
+        })
 
-        InventoryStatus:SetText(#Items > 0 and ("items: " .. #Items) or "inventory empty")
-        for _, ItemText in ipairs(Items) do
-            table.insert(InventoryLabels, InventorySection:Label({Name = ItemText}))
+        -- Adapted from NH's BuildInvSnapshot: recurse through container inventories,
+        -- count stacks, resolve skin icons, and sort by total stack value.
+        local function BuildSnapshot(Inventory)
+            local Entries = {}
+            local ItemsList = ReplicatedStorage:FindFirstChild("ItemsList")
+            local Skins = ReplicatedStorage:FindFirstChild("Skins")
+            local function Walk(Container, ContainerName)
+                for _, Item in ipairs(Container:GetChildren()) do
+                    local Data = ItemsList and ItemsList:FindFirstChild(Item.Name)
+                    if Data then
+                        local Allowed = next(Whitelist) == nil
+                            or Whitelist[Item.Name] == true
+                            or table.find(Whitelist, Item.Name) ~= nil
+                        if Allowed then
+                            local Amount = 1
+                            for _, Attribute in ipairs({"Amount", "Count", "Quantity"}) do
+                                local Value = tonumber(Item:GetAttribute(Attribute))
+                                if Value and Value > 1 then
+                                    Amount = math.max(math.floor(Value + 0.5), 1)
+                                    break
+                                end
+                            end
+                            local Properties = Data:FindFirstChild("ItemProperties")
+                            local Price = Properties and tonumber(Properties:GetAttribute("Price")) or 0
+                            local Image
+                            pcall(function()
+                                local ItemSkins = Skins and Skins:FindFirstChild(Item.Name)
+                                local Skin = ItemSkins and ItemSkins:FindFirstChild(tostring(Item:GetAttribute("Skin") or "Default"))
+                                Image = Skin and Skin:GetAttribute("ItemIcon")
+                                if not Image then
+                                    local Icon = Properties and Properties:FindFirstChild("ItemIcon")
+                                    Image = Icon and Icon.Image
+                                end
+                            end)
+                            if type(Image) == "number" then
+                                Image = "rbxassetid://" .. tostring(Image)
+                            end
+                            Entries[#Entries + 1] = {
+                                Name = Item.Name, Amount = Amount,
+                                Image = type(Image) == "string" and Image or "",
+                                Container = ContainerName, TotalValue = (Price or 0) * Amount
+                            }
+                        end
+                    end
+                    local Nested = Item:FindFirstChild("Inventory")
+                    if Nested then
+                        Walk(Nested, Item.Name)
+                    end
+                end
+            end
+            Walk(Inventory, "Inventory")
+            table.sort(Entries, function(Left, Right)
+                if Left.TotalValue ~= Right.TotalValue then
+                    return Left.TotalValue > Right.TotalValue
+                end
+                if Left.Name ~= Right.Name then
+                    return Left.Name < Right.Name
+                end
+                if Left.Container ~= Right.Container then
+                    return Left.Container < Right.Container
+                end
+                return Left.Amount < Right.Amount
+            end)
+            return Entries
         end
+
+        local function RefreshInventory()
+            if Unloading or not Enabled then
+                return
+            end
+            local Target = SourceMode == "self" and LocalPlayer or CurrentTarget
+            if Target ~= LastTarget then
+                Viewer:Clear()
+                LastSignature = nil
+                LastTarget = Target
+            end
+            local PlayerFolder = ReplicatedStorage:FindFirstChild("Players")
+            local TargetFolder = Target and Target.Parent == Players and PlayerFolder
+                and PlayerFolder:FindFirstChild(Target.Name)
+            local Inventory = TargetFolder and TargetFolder:FindFirstChild("Inventory")
+            Viewer:SetTarget(Target and Target.Name or "No target selected — aim at a player")
+            if not Inventory then
+                Viewer:Clear()
+                Viewer:SetSummary(Target and "inventory unavailable" or "")
+                Viewer:SetVisibility(true)
+                LastSignature = nil
+                return
+            end
+
+            local Entries = BuildSnapshot(Inventory)
+            local TotalValue = 0
+            local Signature = {}
+            for _, Entry in ipairs(Entries) do
+                TotalValue = TotalValue + Entry.TotalValue
+                Signature[#Signature + 1] = string.format("%q:%d:%s:%q:%q",
+                    Entry.Name, Entry.Amount, tostring(Entry.TotalValue), Entry.Container, Entry.Image)
+            end
+            local NewSignature = table.concat(Signature, "|")
+            if NewSignature ~= LastSignature then
+                Viewer:SetItems(Entries)
+                LastSignature = NewSignature
+            end
+            Viewer:SetSummary(string.format("%d items  |  $%.0f%s", #Entries, TotalValue,
+                #Entries == 0 and "  |  empty or no matching items" or ""))
+            Viewer:SetVisibility(not MinimumEnabled or TotalValue >= MinimumValue)
+        end
+
+        ViewerToggle = InventorySection:Toggle({
+            Name = "inventory viewer", Flag = "inventory_viewer", Default = false,
+            Callback = function(Value)
+                Enabled = Value == true
+                Viewer:SetVisibility(Enabled)
+                if Enabled then
+                    RefreshInventory()
+                else
+                    Viewer:Clear()
+                    LastSignature = nil
+                    LastTarget = nil
+                end
+            end
+        })
+        InventorySection:Dropdown({
+            Name = "view inventory", Flag = "inventory_viewer_source",
+            Items = {"target", "self"}, Default = "target",
+            Callback = function(Value)
+                SourceMode = Value
+                RefreshInventory()
+            end
+        })
+        InventorySection:Toggle({
+            Name = "minimum total value", Flag = "inventory_minimum_enabled", Default = false,
+            Callback = function(Value)
+                MinimumEnabled = Value == true
+                RefreshInventory()
+            end
+        })
+        InventorySection:Slider({
+            Name = "minimum value", Flag = "inventory_minimum_value",
+            Min = 0, Max = 1000000, Default = 0, Decimals = 1,
+            Callback = function(Value)
+                MinimumValue = tonumber(Value) or 0
+                RefreshInventory()
+            end
+        })
+
+        local ItemNames = {}
+        local ItemsList = ReplicatedStorage:FindFirstChild("ItemsList")
+        if ItemsList then
+            for _, Item in ipairs(ItemsList:GetChildren()) do
+                ItemNames[#ItemNames + 1] = Item.Name
+            end
+            table.sort(ItemNames)
+        end
+        InventorySection:Dropdown({
+            Name = "item whitelist (empty = all)", Flag = "inventory_whitelist",
+            Items = ItemNames, Multi = true, Default = {},
+            Callback = function(Value)
+                Whitelist = type(Value) == "table" and Value or {}
+                RefreshInventory()
+            end
+        })
+        InventorySection:Button({
+            Name = "refresh inventory",
+            Callback = function()
+                LastSignature = nil
+                RefreshInventory()
+            end
+        })
+        Library:Connect(RunService.Heartbeat, function(DeltaTime)
+            if Unloading or not Enabled then
+                return
+            end
+            Elapsed = Elapsed + DeltaTime
+            if Elapsed >= 0.2 then
+                Elapsed = Elapsed % 0.2
+                RefreshInventory()
+            end
+        end)
     end
-
-    InventorySection:Button({
-        Name = "refresh inventory",
-        Callback = RefreshInventory
-    })
-
-    task.delay(1, RefreshInventory)
 end
 
 do
