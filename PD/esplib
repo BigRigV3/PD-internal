@@ -6,7 +6,13 @@ end)
 
 cloneref = cloneref or function(Object) return Object end
 
-local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game:GetService("Workspace")), cloneref(game:GetService("RunService")), cloneref(game:GetService("Players")), game:GetService("CoreGui"), cloneref(game:GetService("ReplicatedStorage"))
+--#region Services and shared locals
+local Workspace = cloneref(game:GetService("Workspace"))
+local RunService = cloneref(game:GetService("RunService"))
+local Players = cloneref(game:GetService("Players"))
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+--#endregion
 
 local ESP = {
     Enabled = true,
@@ -977,7 +983,7 @@ do -- Initalize
 
                 --[[ do -- Item ESP
                     if ESP.Items.Enabled then
-                        for _, debrisPart in pairs(workspace.Debris:GetChildren()) do
+                        for _, debrisPart in pairs(Workspace.Debris:GetChildren()) do
                             if debrisPart:IsA("BasePart") then
                                 local item_pos = debrisPart.Position
                                 local screen_pos, onScreen = Cam:WorldToScreenPoint(item_pos)
@@ -1590,13 +1596,13 @@ do -- Initalize
         coroutine.wrap(Updater)();
     end
     do -- Update ESP
-        for _, v in pairs(game:GetService("Players"):GetPlayers()) do
+        for _, v in pairs(Players:GetPlayers()) do
             if v.Name ~= lplayer.Name then
                 coroutine.wrap(CreatePlayerESP)(v)
             end      
         end
         --
-        local PlayerAdded = game:GetService("Players").PlayerAdded:Connect(function(v)
+        local PlayerAdded = Players.PlayerAdded:Connect(function(v)
             coroutine.wrap(CreatePlayerESP)(v)
         end);
         table.insert(Euphoria.List, PlayerAdded);
@@ -1640,7 +1646,13 @@ end)
 
 cloneref = cloneref or function(Object) return Object end
 
-local Workspace, RunService, Players, CoreGui, ReplicatedStorage = cloneref(game:GetService("Workspace")), cloneref(game:GetService("RunService")), cloneref(game:GetService("Players")), game:GetService("CoreGui"), cloneref(game:GetService("ReplicatedStorage"))
+--#region Services and shared locals
+local Workspace = cloneref(game:GetService("Workspace"))
+local RunService = cloneref(game:GetService("RunService"))
+local Players = cloneref(game:GetService("Players"))
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+--#endregion
 
 local ESP = {
     Enabled = true,
@@ -2529,7 +2541,7 @@ do -- Initalize
 
                 --[[ do -- Item ESP
                     if ESP.Items.Enabled then
-                        for _, debrisPart in pairs(workspace.Debris:GetChildren()) do
+                        for _, debrisPart in pairs(Workspace.Debris:GetChildren()) do
                             if debrisPart:IsA("BasePart") then
                                 local item_pos = debrisPart.Position
                                 local screen_pos, onScreen = Cam:WorldToScreenPoint(item_pos)
@@ -3106,13 +3118,13 @@ do -- Initalize
         coroutine.wrap(Updater)();
     end
     do -- Update ESP
-        for _, v in pairs(game:GetService("Players"):GetPlayers()) do
+        for _, v in pairs(Players:GetPlayers()) do
             if v.Name ~= lplayer.Name then
                 coroutine.wrap(CreatePlayerESP)(v)
             end      
         end
         --
-        local PlayerAdded = game:GetService("Players").PlayerAdded:Connect(function(v)
+        local PlayerAdded = Players.PlayerAdded:Connect(function(v)
             coroutine.wrap(CreatePlayerESP)(v)
         end);
         table.insert(Euphoria.List, PlayerAdded);
