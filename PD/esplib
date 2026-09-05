@@ -1419,7 +1419,7 @@ do -- Initalize
                                     local FriendColor = ESP.Options.FriendcheckRGB
                                     NameText = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s', FriendColor.R * 255, FriendColor.G * 255, FriendColor.B * 255, plr.Name)
                                 else
-                                    NameText = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s', 255, 0, 0, plr.Name)
+                                    NameText = plr.Name
                                 end
 
                                 local DistanceSettings = ESP.Drawing.Distances
@@ -1432,7 +1432,7 @@ do -- Initalize
                                         local FriendColor = ESP.Options.FriendcheckRGB
                                         NameText = string.format('(<font color="rgb(%d, %d, %d)">F</font>) %s [%d]', FriendColor.R * 255, FriendColor.G * 255, FriendColor.B * 255, plr.Name, DistanceValue)
                                     else
-                                        NameText = string.format('(<font color="rgb(%d, %d, %d)">E</font>) %s [%d]', 255, 0, 0, plr.Name, DistanceValue)
+                                        NameText = string.format("%s [%d]", plr.Name, DistanceValue)
                                     end
                                 end
 
@@ -1444,7 +1444,7 @@ do -- Initalize
 
                             do -- Flags
                                 local FlagsEnabled = ESP.Drawing.Flags.Enabled == true
-                                local FlagText = IsFriend and "FRIEND" or "ENEMY"
+                                local FlagText = IsFriend and "FRIEND" or ""
                                 local FlagColor = IsFriend and ESP.Options.FriendcheckRGB or Color3.fromRGB(255, 80, 80)
                                 local VisibilityText = TargetVisible and "VISIBLE" or "HIDDEN"
                                 local VisibilityColor = TargetVisible
@@ -1452,7 +1452,7 @@ do -- Initalize
                                     or Color3.fromRGB(255, 55, 55)
 
                                 Flag1.Position = UDim2.new(0, Pos.X + w / 2 + 20, 0, Pos.Y - h / 2 + 3)
-                                Flag2.Position = UDim2.new(0, Pos.X + w / 2 + 20, 0, Pos.Y - h / 2 + 17)
+                                Flag2.Position = UDim2.new(0, Pos.X + w / 2 + 20, 0, Pos.Y - h / 2 + (IsFriend and 17 or 3))
 
                                 if LastFlagsText ~= FlagText then
                                     LastFlagsText = FlagText
@@ -1474,7 +1474,7 @@ do -- Initalize
                                     Flag2.TextColor3 = VisibilityColor
                                 end
 
-                                Flag1.Visible = FlagsEnabled
+                                Flag1.Visible = FlagsEnabled and IsFriend
                                 Flag2.Visible = FlagsEnabled and ESP.Drawing.Flags.Visibility == true
                             end
                             
