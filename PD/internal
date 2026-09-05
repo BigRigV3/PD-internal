@@ -2196,12 +2196,7 @@ do
         local Elapsed = 0
         local ViewerToggle
         local Viewer = Library:InventoryViewer({
-            Name = "Inventory viewer",
-            OnClose = function()
-                if ViewerToggle then
-                    ViewerToggle:Set(false)
-                end
-            end
+            Name = "Inventory viewer"
         })
 
         -- Adapted from NH's BuildInvSnapshot: recurse through container inventories,
