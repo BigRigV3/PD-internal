@@ -8,7 +8,7 @@ do --// UI Source
     -- Bad executor support (atleast by a bit)
     cloneref = cloneref or function(Object) return Object end
 
-    --#region Services
+    --#region Services and shared locals
     local Players = game:GetService("Players")
     local UserInputService = game:GetService("UserInputService")
     local RunService = game:GetService("RunService")
@@ -16,16 +16,13 @@ do --// UI Source
     local TweenService = game:GetService("TweenService")
     local GuiService = game:GetService("GuiService")
     local CoreGui = cloneref(game:GetService("CoreGui"))
-    --#endregion
-
-    gethui = gethui or function() return CoreGui end
-
-    --#region Variables
     local LocalPlayer = Players.LocalPlayer
     local IsMobile = UserInputService.TouchEnabled or false
     local GuiInset = GuiService:GetGuiInset().Y
     local Mouse = cloneref(LocalPlayer:GetMouse())
     --#endregion
+
+    gethui = gethui or function() return CoreGui end
 
     Library = {
         Flags = { },
@@ -3069,6 +3066,130 @@ do --// UI Source
                         Items["Notification"].Instance:Destroy()
                     end)
                 end)
+            end
+
+            -- Independent, draggable inventory window; shares the library theme and cleanup.
+            Library.InventoryViewer = function(Self, Params)
+                Params = Params or {}
+                local Viewer = {Rows = {}, IsOpen = false}
+                local Frame = Library:Create("Frame", {
+                    Parent = Library.Holder.Instance,
+                    Position = Params.Position or UDim2.new(1, -450, 0, 100),
+                    Size = Params.Size or UDim2.fromOffset(420, 360),
+                    BackgroundColor3 = Library.Theme.Background,
+                    BorderSizePixel = 0, Visible = false, ZIndex = 20
+                }):AddToTheme({BackgroundColor3 = "Background"})
+                Frame:MakeDraggable()
+                Frame:MakeResizeable(Vector2.new(320, 220))
+                Library:Create("UIStroke", {
+                    Parent = Frame.Instance, Color = Library.Theme.Accent,
+                    Thickness = 1
+                }):AddToTheme({Color = "Accent"})
+
+                local function Text(Parent, Position, Size, Value, Theme)
+                    return Library:Create("TextLabel", {
+                        Parent = Parent, Position = Position, Size = Size,
+                        BackgroundTransparency = 1, BorderSizePixel = 0,
+                        FontFace = Library.Font, TextSize = Library.FontSize,
+                        Text = Value, TextColor3 = Library.Theme[Theme or "Text"],
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        TextTruncate = Enum.TextTruncate.AtEnd,
+                        RichText = false, ZIndex = 22
+                    }):AddToTheme({TextColor3 = Theme or "Text"})
+                end
+
+                local Title = Text(Frame.Instance, UDim2.fromOffset(10, 5),
+                    UDim2.new(1, -45, 0, 20), Params.Name or "Inventory viewer", "Accent")
+                local Target = Text(Frame.Instance, UDim2.fromOffset(10, 28),
+                    UDim2.new(1, -20, 0, 18), "No target selected")
+                local Summary = Text(Frame.Instance, UDim2.fromOffset(10, 48),
+                    UDim2.new(1, -20, 0, 18), "", "Inactive Text")
+                local Close = Library:Create("TextButton", {
+                    Parent = Frame.Instance, Position = UDim2.new(1, -28, 0, 4),
+                    Size = UDim2.fromOffset(22, 22), BackgroundTransparency = 1,
+                    Text = "X", FontFace = Library.Font, TextSize = Library.FontSize,
+                    TextColor3 = Library.Theme.Text, ZIndex = 23
+                }):AddToTheme({TextColor3 = "Text"})
+                local List = Library:Create("ScrollingFrame", {
+                    Parent = Frame.Instance, Position = UDim2.fromOffset(8, 74),
+                    Size = UDim2.new(1, -16, 1, -82),
+                    BackgroundTransparency = 1, BorderSizePixel = 0,
+                    CanvasSize = UDim2.fromOffset(0, 0),
+                    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                    ScrollBarThickness = 3, ScrollBarImageColor3 = Library.Theme.Accent,
+                    ScrollingDirection = Enum.ScrollingDirection.Y,
+                    ClipsDescendants = true, ZIndex = 21
+                }):AddToTheme({ScrollBarImageColor3 = "Accent"})
+                Library:Create("UIListLayout", {
+                    Parent = List.Instance, Padding = UDim.new(0, 4),
+                    SortOrder = Enum.SortOrder.LayoutOrder
+                })
+
+                function Viewer:SetVisibility(Value)
+                    self.IsOpen = Value == true
+                    Frame.Instance.Visible = self.IsOpen
+                end
+                function Viewer:SetOpen(Value)
+                    self:SetVisibility(Value)
+                end
+                function Viewer:SetText(Value)
+                    Title.Instance.Text = tostring(Value)
+                end
+                function Viewer:SetTarget(Value)
+                    Target.Instance.Text = tostring(Value)
+                end
+                function Viewer:SetSummary(Value)
+                    Summary.Instance.Text = tostring(Value)
+                end
+                function Viewer:Clear()
+                    for _, Row in ipairs(self.Rows) do
+                        Row.Frame.Instance.Visible = false
+                    end
+                    List.Instance.CanvasPosition = Vector2.new(0, 0)
+                end
+                function Viewer:SetItems(Entries)
+                    for Index, Entry in ipairs(Entries) do
+                        local Row = self.Rows[Index]
+                        if not Row then
+                            local RowFrame = Library:Create("Frame", {
+                                Parent = List.Instance, Size = UDim2.new(1, -6, 0, 46),
+                                BackgroundColor3 = Library.Theme.Content,
+                                BorderSizePixel = 0, ZIndex = 21
+                            }):AddToTheme({BackgroundColor3 = "Content"})
+                            Row = {
+                                Frame = RowFrame,
+                                Icon = Library:Create("ImageLabel", {
+                                    Parent = RowFrame.Instance, Position = UDim2.fromOffset(4, 3),
+                                    Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1,
+                                    ScaleType = Enum.ScaleType.Fit, ZIndex = 22
+                                }),
+                                Name = Text(RowFrame.Instance, UDim2.fromOffset(50, 3),
+                                    UDim2.new(1, -56, 0, 20), ""),
+                                Detail = Text(RowFrame.Instance, UDim2.fromOffset(50, 24),
+                                    UDim2.new(1, -56, 0, 18), "", "Inactive Text")
+                            }
+                            self.Rows[Index] = Row
+                        end
+                        Row.Frame.Instance.LayoutOrder = Index
+                        Row.Frame.Instance.Visible = true
+                        Row.Icon.Instance.Image = Entry.Image or ""
+                        Row.Name.Instance.Text = string.format("%s  x%d", Entry.Name, Entry.Amount or 1)
+                        Row.Detail.Instance.Text = string.format("%s  |  $%s",
+                            Entry.Container or "Inventory", tostring(Entry.TotalValue or 0))
+                    end
+                    for Index = #Entries + 1, #self.Rows do
+                        self.Rows[Index].Frame.Instance.Visible = false
+                    end
+                end
+
+                Close:Connect("MouseButton1Down", function()
+                    Viewer:SetVisibility(false)
+                    if Params.OnClose then
+                        Params.OnClose()
+                    end
+                end)
+                Viewer.Items = {MainFrame = Frame, List = List}
+                return Viewer
             end
 
             Library.Window = function(Self, Params)
