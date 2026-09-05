@@ -1507,6 +1507,9 @@ do
         end
 
         SetWeaponOverride(Weapon, "FireModes", Flags.allfiremode == true, {"Auto", "Semi"})
+        SetWeaponOverride(Weapon, "FireMode", Flags.allfiremode == true, "Auto")
+        SetWeaponOverride(Weapon, "AimInSpeed", Flags.instantequip == true, 0)
+        SetWeaponOverride(Weapon, "AimOutSpeed", Flags.instantequip == true, 0)
         SetWeaponOverride(Weapon, "EquipTValue", Flags.instantequip == true, 100)
         SetWeaponOverride(Weapon, "FireRate", Flags.fireratechanger == true, Flags.fireratedelay)
 
@@ -1557,6 +1560,96 @@ do
         end
     end
 
+    -- Tomboy-style hooks for SpringV2 and weapon update functions. The wrappers
+    -- pass through unchanged while their corresponding option is disabled.
+    local TomboyHooks = {}
+    local TomboyHookedFunctions = setmetatable({}, {__mode = "k"})
+
+    local function RestoreTomboyHooks()
+        for Target, Hook in pairs(TomboyHookedFunctions) do
+            pcall(function()
+                hookfunction(Target, Hook.Original)
+            end)
+        end
+        table.clear(TomboyHookedFunctions)
+        table.clear(TomboyHooks)
+    end
+
+    local function HookTomboyFunction(Target, Builder)
+        if type(Target) ~= "function" or TomboyHookedFunctions[Target] then
+            return
+        end
+
+        local Original
+        local Replacement = Builder(function(...)
+            return Original(...)
+        end)
+        local Success = pcall(function()
+            Original = hookfunction(Target, Replacement)
+        end)
+        if Success and type(Original) == "function" then
+            TomboyHookedFunctions[Target] = {
+                Original = Original,
+                Replacement = Replacement
+            }
+        end
+    end
+
+    local function HookSpring(Spring)
+        if type(Spring) ~= "table" then
+            return
+        end
+
+        HookTomboyFunction(rawget(Spring, "shove"), function(Original)
+            return function(...)
+                if Library.Flags.norecoil == true or NoRecoilEnabled then
+                    return
+                end
+                return Original(...)
+            end
+        end)
+
+        HookTomboyFunction(rawget(Spring, "update"), function(Original)
+            return function(...)
+                if Library.Flags.nobobbing == true then
+                    return Vector3.zero
+                end
+                return Original(...)
+            end
+        end)
+    end
+
+    local function InstallTomboyWeaponHooks()
+        if type(getgc) ~= "function" or type(hookfunction) ~= "function" then
+            return
+        end
+
+        local Success, Garbage = pcall(getgc, true)
+        if not Success or type(Garbage) ~= "table" then
+            return
+        end
+
+        for _, Value in next, Garbage do
+            if type(Value) == "table" then
+                if type(rawget(Value, "shove")) == "function"
+                    and type(rawget(Value, "update")) == "function"
+                then
+                    HookSpring(Value)
+                end
+
+                if type(rawget(Value, "create")) == "function" then
+                    HookTomboyFunction(rawget(Value, "create"), function(Original)
+                        return function(...)
+                            local Result = Original(...)
+                            HookSpring(Result)
+                            return Result
+                        end
+                    end)
+                end
+            end
+        end
+    end
+
     local FPSGameVars
     local OldUpdateClient
     local WeaponModsHook
@@ -1566,6 +1659,8 @@ do
         if WeaponModsHookInstalled then
             return true
         end
+
+        InstallTomboyWeaponHooks()
 
         FPSGameVars = FindFPSGameVars()
         OldUpdateClient = FPSGameVars and rawget(FPSGameVars, "updateClient")
@@ -1599,6 +1694,7 @@ do
 
     RestoreWeaponModsHook = function()
         RestoreWeaponOverrides()
+        RestoreTomboyHooks()
         if FPSGameVars and OldUpdateClient and WeaponModsHook
             and rawget(FPSGameVars, "updateClient") == WeaponModsHook
         then
@@ -1857,11 +1953,21 @@ do
                     if Library.Flags.removeaimrestrictions and Arguments[1] == "BlockADS" then
                         return false
                     end
-                elseif Method == "InvokeServer"
-                    and InstantReloadEnabled
-                    and self.Name == "Reload"
-                then
-                    Arguments[2] = 0
+                elseif Method == "InvokeServer" then
+                    if self.Name == "FireProjectile"
+                        and (InstantBulletEnabled or Library.Flags.instantbullet == true)
+                        and SilentAimTargetPart
+                        and SilentAimTargetPart.Parent
+                    then
+                        local Camera = Workspace.CurrentCamera
+                        if Camera then
+                            local Origin = Camera.CFrame.Position
+                            local Distance = (SilentAimTargetPart.Position - Origin).Magnitude
+                            Arguments[3] = tick() - (Distance / 1000)
+                        end
+                    elseif InstantReloadEnabled and self.Name == "Reload" then
+                        Arguments[2] = 0
+                    end
                 elseif Method == "Raycast"
                 then
                     local CallerInfo = type(getinfo) == "function" and getinfo(3)
@@ -1877,16 +1983,6 @@ do
                         pcall(function() Arguments[3].IgnoreWater = true end)
                     end
 
-                    -- Project Delta's instant-bullet implementation extends the
-                    -- bullet ray so the projectile reaches its destination
-                    -- immediately. Restrict it to the bullet step to avoid
-                    -- changing unrelated game raycasts.
-                    if (InstantBulletEnabled or Library.Flags.instantbullet == true)
-                        and typeof(Arguments[2]) == "Vector3"
-                        and (IsBulletCaller or string.find(Traceback, "onStep", 1, true))
-                    then
-                        Arguments[2] = Arguments[2] * 9e9
-                    end
                 end
 
                 return OldNamecall(self, WeaponNamecallUnpack(Arguments, 1, ArgumentCount))
